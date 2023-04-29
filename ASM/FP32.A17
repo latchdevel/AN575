@@ -1,0 +1,2946 @@
+;	RCS Header $Id: fp32.a17 2.8 1996/12/21 20:59:37 F.J.Testa Exp $
+
+;	$Revision: 2.8 $
+
+;       PIC17 32 BIT FLOATING POINT LIBRARY
+;
+;       Unary operations: both input and output are in AEXP,AARG
+;
+;       Binary operations: input in AEXP,AARG and BEXP,BARG with output in AEXP,AARG
+;
+;       All routines return WREG = 0x00 for successful completion, and WREG = 0xFF
+;       for an error condition specified in FPFLAGS.
+;
+;       Max timings are worst case cycle counts, while Min timings are non-exception
+;       best case cycle counts.
+;
+;         Routine               Function
+;
+;       FLO2432   24 bit integer to 32 bit floating point conversion
+;       FLO32
+;
+;               Timing:            RND
+;                               0       1
+;
+;                       0       60      60
+;                  SAT
+;                       1       67      67
+;
+;       NRM3232   32 bit normalization of unnormalized 32 bit floating point numbers
+;       NRM32
+;
+;               Timing:            RND
+;                               0       1
+;
+;                       0       48      48
+;                  SAT
+;                       1       55      55
+;
+;
+;       INT3224         32 bit floating point to 24 bit integer conversion
+;       INT32
+;
+;               Timing:            RND
+;                               0       1
+;
+;                       0       70      79
+;                  SAT
+;                       1       70      81
+;
+;
+;       FLO3232   32 bit integer to 32 bit floating point conversion
+;
+;               Timing:            RND
+;                               0       1
+;
+;                       0       75      91
+;                  SAT
+;                       1       75      97
+;
+;       NRM4032   32 bit normalization of unnormalized 40 bit floating point numbers
+;
+;               Timing:            RND
+;                               0       1
+;
+;                       0       61      77
+;                  SAT
+;                       1       61      83
+;
+;
+;       INT3232         32 bit floating point to 32 bit integer conversion
+;
+;               Timing:            RND
+;                               0       1
+;
+;                       0       82      91
+;                  SAT
+;                       1       82      93
+;
+;       FPA32           32 bit floating point add
+;
+;               Timing:            RND
+;                               0       1
+;
+;                       0       160     176
+;                  SAT
+;                       1       160     182
+;
+;       FPS32           32 bit floating point subtract
+;
+;               Timing:            RND
+;                               0       1
+;
+;                       0       161     177
+;                  SAT
+;                       1       161     183
+;
+;       FPM32           32 bit floating point multiply
+;
+;               Timing:            RND
+;                               0       1
+;
+;                       0       100     114
+;                  SAT
+;                       1       100     122
+;
+;       FPD32           32 bit floating point divide
+;
+;               Timing:            RND
+;                               0       1
+;
+;                       0       323     337
+;                  SAT
+;                       1       323     345
+;
+;
+;**********************************************************************************************
+;**********************************************************************************************
+
+;       32 bit floating point representation
+
+;       EXPONENT        8 bit biased exponent
+
+;                       It is important to note that the use of biased exponents produces
+;                       a unique representation of a floating point 0, given by
+;                       EXP = HIGHBYTE = MIDBYTE = LOWBYTE = 0x00, with 0 being
+;                       the only number with EXP = 0.
+
+;       HIGHBYTE        8 bit most significant byte of fraction in sign-magnitude representation,
+;                       with SIGN = MSB, implicit MSB = 1 and radix point to the right of MSB
+
+;       MIDBYTE         8 bit middle significant byte of sign-magnitude fraction
+
+;       LOWBYTE         8 bit least significant byte of sign-magnitude fraction
+
+;       EXPONENT        HIGHBYTE        MIDBYTE         LOWBYTE
+
+;       xxxxxxxx        S.xxxxxxx       xxxxxxxx        xxxxxxxx
+
+;                        |
+;                      RADIX
+;                      POINT
+
+
+
+;**********************************************************************************************
+;**********************************************************************************************
+
+;       Integer to float conversion
+
+;       Input:  24 bit 2's complement integer right justified in AARGB0,AARGB1, AARGB2
+
+;       Use:    CALL    FLO2432 or      CALL    FLO32
+
+;       Output: 32 bit floating point number in AEXP, AARGB0, AARGB1, AARGB2
+
+;       Result: AARG  <--  FLOAT( AARG )
+
+;       Max Timing:     12+48 = 60 clks         SAT = 0
+;                       12+55 = 67 clks         SAT = 1
+
+;       Min Timing:     6+24 = 30 clks                  AARG = 0
+;                       6+20 = 26 clks
+
+;       PM: 12+115 = 127                DM: 7
+
+;----------------------------------------------------------------------------------------------
+
+FLO2432
+FLO32
+		MOVLW           0x17+EXPBIAS		; initialize exponent and add bias
+                MOVWF           EXP
+                MOVPF           AARGB0,SIGN              ; save sign in SIGN
+                BTFSS           AARGB0,MSB               ; test sign
+                GOTO            NRM3232
+                CLRF            WREG,F                 ; if < 0, negate, set MSB in SIGN
+                COMF            AARGB2,F
+                COMF            AARGB1,F
+                COMF            AARGB0,F
+                INCF            AARGB2,F
+                ADDWFC          AARGB1,F
+                ADDWFC          AARGB0,F
+
+;**********************************************************************************************
+
+;       Normalization routine
+
+;       Input:  32 bit unnormalized floating point number in AEXP, AARGB0, AARGB1,
+;               AARGB2 with sign in SIGN,MSB.
+
+;       Use:    CALL    NRM3232 or      CALL    NRM32
+
+;       Output: 32 bit normalized floating point number in AEXP, AARGB0, AARGB1, AARGB2
+
+;       Result: AARG  <--  NORMALIZE( AARG )
+
+;       Max Timing:     21+19+8 = 48 clks               SAT = 0
+;                       21+19+15 = 55 clks              SAT = 1
+
+;       Min Timing:     4+7+7+6 = 24 clks               AARG = 0
+;                       3+5+4+8 = 20 clks
+
+;       PM: 115                                         DM: 7
+
+;----------------------------------------------------------------------------------------------
+
+NRM3232
+NRM32
+		CLRF            TEMP,W			; clear exponent decrement
+                CPFSGT          AARGB0			; test if highbyte=0
+                GOTO            NRM3232A
+
+TNIB3232        MOVLW           0xF0                    ; test if highnibble=0
+                ANDWF           AARGB0,W
+                TSTFSZ          WREG
+                GOTO            NORM3232
+                SWAPF           AARGB0,F                ; if so, shift 4 bits
+                SWAPF           AARGB1,W
+                ANDLW           0x0F
+                ADDWF           AARGB0,F
+
+                SWAPF           AARGB1,W
+                ANDLW           0xF0
+                MOVPF           WREG,AARGB1
+                SWAPF           AARGB2,W
+                ANDLW           0x0F
+                ADDWF           AARGB1,F
+
+                SWAPF           AARGB2,W
+                ANDLW           0xF0
+                MOVPF           WREG,AARGB2
+
+                BSF             TEMP,2                  ; increase decrement by 4
+
+NORM3232        BCF             _C                      ; clear carry bit
+
+                BTFSC           AARGB0,MSB		; if MSB=1, normalization done
+                GOTO            TNORMUN3232
+                RLCF            AARGB2,F                ; otherwise, shift left and 
+                RLCF            AARGB1,F                ; increment decrement
+                RLCF            AARGB0,F
+                INCF            TEMP,F
+                BTFSC           AARGB0,MSB
+                GOTO            TNORMUN3232
+                RLCF            AARGB2,F
+                RLCF            AARGB1,F
+                RLCF            AARGB0,F
+                INCF            TEMP,F
+                BTFSC           AARGB0,MSB		; since highnibble != 0, at most
+                GOTO            TNORMUN3232		; 3 left shifts are required
+                RLCF            AARGB2,F
+                RLCF            AARGB1,F
+                RLCF            AARGB0,F
+                INCF            TEMP,F
+
+TNORMUN3232     MOVFP           TEMP,WREG               ; if EXP <= decrement in TEMP,
+                CPFSGT          EXP                     ; floating point underflow has
+                GOTO            SETFUN32                ; occured
+                SUBWF           EXP,F			; otherwise, compute EXP
+
+FIXSIGN32       BTFSS           SIGN,MSB
+                BCF             AARGB0,MSB		; clear explicit MSB if positive
+                RETLW           0
+
+NRM3232A        MOVFP           AARGB1,AARGB0		; shift 8 bits by move
+                MOVFP           AARGB2,AARGB1
+                CLRF            AARGB2,W
+                BSF             TEMP,3			; increase decrement by 8       
+                CPFSGT          AARGB0			; test if highbyte=0
+                GOTO            NRM3232B
+
+TNIB3232A       MOVLW           0xF0                    ; test if highnibble=0
+                ANDWF           AARGB0,W
+                TSTFSZ          WREG
+                GOTO            NORM3232A
+                SWAPF           AARGB0,F                ; if so, shift 4 bits
+                SWAPF           AARGB1,W
+                ANDLW           0x0F
+                ADDWF           AARGB0,F
+
+                SWAPF           AARGB1,W
+                ANDLW           0xF0
+                MOVPF           WREG,AARGB1
+
+                BSF             TEMP,2                  ; increase decrement by 4
+
+NORM3232A       BCF             _C                      ; clear carry bit
+
+                BTFSC           AARGB0,MSB		; if MSB=1, normalization done
+                GOTO            TNORMUN3232
+                RLCF            AARGB1,F                ; otherwise, shift left and 
+                RLCF            AARGB0,F                ; increment decrement
+                INCF            TEMP,F
+                BTFSC           AARGB0,MSB
+                GOTO            TNORMUN3232
+                RLCF            AARGB1,F
+                RLCF            AARGB0,F
+                INCF            TEMP,F
+                BTFSC           AARGB0,MSB		; since highnibble != 0, at most
+                GOTO            TNORMUN3232             ; 3 left shifts are required
+                RLCF            AARGB1,F
+                RLCF            AARGB0,F
+                INCF            TEMP,F
+                GOTO            TNORMUN3232
+
+NRM3232B        MOVFP           AARGB1,AARGB0		; shift 8 bits by move
+                CLRF            AARGB1,W
+                BCF             TEMP,3                  ; increase decrement by 8
+                BSF             TEMP,4  
+                CPFSGT          AARGB0			; if highbyte=0, result=0
+                GOTO            RES032
+
+TNIB3232B       MOVLW           0xF0                    ; test if highnibble=0
+                ANDWF           AARGB0,W
+                TSTFSZ          WREG
+                GOTO            NORM3232B
+                SWAPF           AARGB0,F                ; if so, shift 4 bits
+
+                BSF             TEMP,2                  ; increase decrement by 4
+
+NORM3232B       BCF             _C                      ; clear carry bit
+
+                BTFSC           AARGB0,MSB		; if MSB=1, normalization done
+                GOTO            TNORMUN3232
+                RLCF            AARGB0,F                ; otherwise, shift left and 
+                INCF            TEMP,F			; increment decrement
+                BTFSC           AARGB0,MSB
+                GOTO            TNORMUN3232
+                RLCF            AARGB0,F
+                INCF            TEMP,F
+                BTFSC           AARGB0,MSB		; since highnibble != 0, at most
+                GOTO            TNORMUN3232             ; 3 left shifts are required
+                RLCF            AARGB0,F
+                INCF            TEMP,F 
+                GOTO            TNORMUN3232
+
+RES032          CLRF            AARGB0,F		; result equals zero
+                CLRF            AARGB1,F
+                CLRF            AARGB2,F
+		CLRF		AARGB3,F		; clear extended byte
+                CLRF            EXP,F
+                RETLW           0
+
+;**********************************************************************************************
+;**********************************************************************************************
+
+;       Integer to float conversion
+
+;       Input:  32 bit 2's complement integer right justified in AARGB0,AARGB1,
+;               AARGB2, AARGB3
+
+;       Use:    CALL    FLO3232
+
+;       Output: 32 bit floating point number in AEXP, AARGB0, AARGB1, AARGB2
+
+;       Result: AARG  <--  FLOAT( AARG )
+
+;       Max Timing:     14+61 = 75 clks         RND = 0
+;                       14+77 = 91 clks         RND = 1, SAT = 0
+;                       14+83 = 97 clks         RND = 1, SAT = 1
+
+;       Min Timing:     6+32 = 38 clks                  AARG = 0
+;                       6+26 = 32 clks
+
+;       PM: 14+178 = 192                                DM: 8
+
+;----------------------------------------------------------------------------------------------
+
+FLO3232         MOVLW           0x1F+EXPBIAS		; initialize exponent and add bias
+                MOVWF           EXP
+                MOVPF           AARGB0,SIGN		; save sign in SIGN
+                BTFSS           AARGB0,MSB		; test sign
+                GOTO            NRM4032
+                CLRF            WREG,F			; if < 0, negate, set MSB in SIGN
+                COMF            AARGB3,F
+                COMF            AARGB2,F
+                COMF            AARGB1,F
+                COMF            AARGB0,F
+                INCF            AARGB3,F
+                ADDWFC          AARGB2,F
+                ADDWFC          AARGB1,F
+                ADDWFC          AARGB0,F
+
+;**********************************************************************************************
+
+;       Normalization routine
+
+;       Input:  40 bit unnormalized floating point number in AEXP, AARGB0, AARGB1,
+;               AARGB2, AARGB3 with sign in SIGN,MSB.
+
+;       Use:    CALL    NRM4032
+
+;       Output: 32 bit normalized floating point number in AEXP, AARGB0, AARGB1, AARGB2
+
+;       Result: AARG  <--  NORMALIZE( AARG )
+
+
+;       Max Timing:     27+22+8+4 = 61 clks             RND = 0
+;                       27+22+24+4 = 77 clks            RND = 1, SAT = 0
+;                       27+22+23+11 = 83 clks           RND = 1, SAT = 1
+
+;       Min Timing:     4+8+8+6+6 = 32 clks             AARG = 0
+;                       3+5+4+8+6 = 26 clks
+
+;       PM: 178                                         DM: 8
+
+;----------------------------------------------------------------------------------------------
+
+NRM4032         CLRF            TEMP,W			; clear exponent decrement
+                CPFSGT          AARGB0			; test if highbyte=0
+                GOTO            NRM4032A
+
+TNIB4032        MOVLW           0xF0                    ; test if highnibble=0
+                ANDWF           AARGB0,W
+                TSTFSZ          WREG
+                GOTO            NORM4032
+                SWAPF           AARGB0,F                ; if so, shift 4 bits
+                SWAPF           AARGB1,W
+                ANDLW           0x0F
+                ADDWF           AARGB0,F
+
+                SWAPF           AARGB1,W
+                ANDLW           0xF0
+                MOVPF           WREG,AARGB1
+                SWAPF           AARGB2,W
+                ANDLW           0x0F
+                ADDWF           AARGB1,F
+
+                SWAPF           AARGB2,W
+                ANDLW           0xF0
+                MOVPF           WREG,AARGB2
+                SWAPF           AARGB3,W
+                ANDLW           0x0F
+                ADDWF           AARGB2,F
+
+                SWAPF           AARGB3,W
+                ANDLW           0xF0
+                MOVPF           WREG,AARGB3
+
+                BSF             TEMP,2                  ; increase decrement by 4
+
+NORM4032        BCF             _C                      ; clear carry bit
+
+                BTFSC           AARGB0,MSB		; if MSB=1, normalization done
+                GOTO            TNORMUN4032
+                RLCF            AARGB3,F                ; otherwise, shift left and 
+                RLCF            AARGB2,F                ; increment decrement
+                RLCF            AARGB1,F
+                RLCF            AARGB0,F
+                INCF            TEMP,F
+                BTFSC           AARGB0,MSB
+                GOTO            TNORMUN4032
+                RLCF            AARGB3,F
+                RLCF            AARGB2,F
+                RLCF            AARGB1,F
+                RLCF            AARGB0,F
+                INCF            TEMP,F
+                BTFSC           AARGB0,MSB		; since highnibble != 0, at most
+                GOTO            TNORMUN4032             ; 3 left shifts are required
+                RLCF            AARGB3,F
+                RLCF            AARGB2,F
+                RLCF            AARGB1,F
+                RLCF            AARGB0,F
+                INCF            TEMP,F
+
+TNORMUN4032     MOVFP           TEMP,WREG               ; if EXP <= decrement in TEMP,
+                CPFSGT          EXP                     ; floating point underflow has
+                GOTO            SETFUN32                ; occured
+                SUBWF           EXP,F			; otherwise, compute EXP
+
+NRMRND4032
+		BTFSC           FPFLAGS,RND		; is rounding enabled?
+                BTFSS           AARGB3,MSB		; is NSB > 0x80?
+                GOTO            FIXSIGN32
+		BSF		_C			; set carry for rounding
+		MOVLW		0x80
+		CPFSGT		AARGB3			; if NSB = 0x80, select even
+		RRCF		AARGB2,W		; using lsb in carry
+                CLRF            WREG,F
+                ADDWFC          AARGB2,F
+                ADDWFC          AARGB1,F
+                ADDWFC          AARGB0,F
+
+                BTFSS           _C                      ; has rounding caused carryout?
+                GOTO            FIXSIGN32
+                RRCF            AARGB0,F                ; if so, right shift
+                RRCF            AARGB1,F
+                RRCF            AARGB2,F
+                INFSNZ          EXP,F			; test for floating point overflow
+                GOTO            SETFOV32
+                GOTO            FIXSIGN32
+
+NRM4032A        MOVFP           AARGB1,AARGB0		; shift 8 bits by move
+                MOVFP           AARGB2,AARGB1
+                MOVFP           AARGB3,AARGB2
+                CLRF            AARGB3,W
+                BSF             TEMP,3                  ; increase decrement by 8       
+                CPFSGT          AARGB0			; test if highbyte=0
+                GOTO            NRM4032B
+
+TNIB4032A       MOVLW           0xF0                    ; test if highnibble=0
+                ANDWF           AARGB0,W
+                TSTFSZ          WREG
+                GOTO            NORM4032A
+                SWAPF           AARGB0,F                ; if so, shift 4 bits
+                SWAPF           AARGB1,W
+                ANDLW           0x0F
+                ADDWF           AARGB0,F
+
+                SWAPF           AARGB1,W
+                ANDLW           0xF0
+                MOVPF           WREG,AARGB1
+                SWAPF           AARGB2,W
+                ANDLW           0x0F
+                ADDWF           AARGB1,F
+
+                SWAPF           AARGB2,W
+                ANDLW           0xF0
+                MOVPF           WREG,AARGB2
+
+                BSF             TEMP,2                  ; increase decrement by 4
+
+NORM4032A       BCF             _C			; clear carry bit
+
+                BTFSC           AARGB0,MSB		; if MSB=1, normalization done
+                GOTO            TNORMUN4032
+                RLCF            AARGB2,F                ; otherwise, shift left and 
+                RLCF            AARGB1,F                ; increment decrement
+                RLCF            AARGB0,F
+                INCF            TEMP,F
+                BTFSC           AARGB0,MSB
+                GOTO            TNORMUN4032
+                RLCF            AARGB2,F
+                RLCF            AARGB1,F
+                RLCF            AARGB0,F
+                INCF            TEMP,F
+                BTFSC           AARGB0,MSB		; since highnibble != 0, at most
+                GOTO            TNORMUN4032             ; 3 left shifts are required
+                RLCF            AARGB2,F
+                RLCF            AARGB1,F
+                RLCF            AARGB0,F
+                INCF            TEMP,F
+                GOTO            TNORMUN4032
+
+NRM4032B        MOVFP           AARGB1,AARGB0		; shift 8 bits by move
+                MOVFP           AARGB2,AARGB1
+                CLRF            AARGB2,W
+                BCF             TEMP,3                  ; increase decrement by 8
+                BSF             TEMP,4  
+                CPFSGT          AARGB0			; if highbyte=0, result=0
+                GOTO            NRM4032C
+
+TNIB4032B       MOVLW           0xF0                    ; test if highnibble=0
+                ANDWF           AARGB0,W
+                TSTFSZ          WREG
+                GOTO            NORM4032B
+
+                SWAPF           AARGB0,F                ; if so, shift 4 bits
+                SWAPF           AARGB1,W
+                ANDLW           0x0F
+                ADDWF           AARGB0,F
+
+                SWAPF           AARGB1,W
+                ANDLW           0xF0
+                MOVPF           WREG,AARGB1
+
+                BSF             TEMP,2                  ; increase decrement by 4
+
+NORM4032B       BCF             _C                      ; clear carry bit
+
+                BTFSC           AARGB0,MSB		; if MSB=1, normalization done
+                GOTO            TNORMUN4032
+                RLCF            AARGB1,F                ; otherwise, shift left and 
+                RLCF            AARGB0,F
+                INCF            TEMP,F			; increment decrement
+                BTFSC           AARGB0,MSB
+                GOTO            TNORMUN4032
+                RLCF            AARGB1,F
+                RLCF            AARGB0,F
+                INCF            TEMP,F
+                BTFSC           AARGB0,MSB		; since highnibble != 0, at most
+                GOTO            TNORMUN4032             ; 3 left shifts are required
+                RLCF            AARGB1,F
+                RLCF            AARGB0,F
+                INCF            TEMP,F
+                GOTO            TNORMUN4032
+
+NRM4032C        MOVFP           AARGB1,AARGB0		; shift 8 bits by move
+                CLRF            AARGB1,W
+                BSF             TEMP,3                  ; increase decrement by 8
+                CPFSGT          AARGB0			; if highbyte=0, result=0
+                GOTO            RES032
+
+TNIB4032C       MOVLW           0xF0                    ; test if highnibble=0
+                ANDWF           AARGB0,W
+                TSTFSZ          WREG
+                GOTO            NORM4032C
+                SWAPF           AARGB0,F                ; if so, shift 4 bits
+
+                BSF             TEMP,2                  ; increase decrement by 4
+
+NORM4032C       BCF             _C                      ; clear carry bit
+
+                BTFSC           AARGB0,MSB		; if MSB=1, normalization done
+                GOTO            TNORMUN4032
+                RLCF            AARGB0,F                ; otherwise, shift left and 
+                INCF            TEMP,F			; increment decrement
+                BTFSC           AARGB0,MSB
+                GOTO            TNORMUN4032
+                RLCF            AARGB0,F
+                INCF            TEMP,F
+                BTFSC           AARGB0,MSB		; since highnibble != 0, at most
+                GOTO            TNORMUN4032             ; 3 left shifts are required
+                RLCF            AARGB0,F
+                INCF            TEMP,F
+                GOTO            TNORMUN4032
+
+
+;**********************************************************************************************
+;**********************************************************************************************
+
+;       Float to integer conversion
+
+;       Input:  32 bit floating point number in AEXP, AARGB0, AARGB1, AARGB2
+
+;       Use:    CALL    INT3224         or      CALL    INT32
+
+;       Output: 24 bit 2's complement integer right justified in AARGB0, AARGB1, AARGB2
+
+;       Result: AARG  <--  INT( AARG )
+
+;       Max Timing:     10+45+15 = 70 clks              RND = 0
+;                       10+45+24 = 79 clks              RND = 1, SAT = 0
+;                       10+45+26 = 81 clks              RND = 1, SAT = 1
+
+;       Min Timing:     4 clks
+
+;       PM: 183                                         DM: 8
+
+;----------------------------------------------------------------------------------------------
+
+INT3224
+INT32
+		CLRF		AARGB3,W
+		CPFSGT		EXP			; test for zero argument
+		RETLW		0x00
+		MOVPF           AARGB0,SIGN		; save sign in SIGN
+                BSF             AARGB0,MSB		; make MSB explicit
+
+                MOVLW           EXPBIAS+0x17		; remove bias+23 from EXP
+		SUBWF		EXP,W
+
+                BTFSS		WREG,MSB		; if >= 23, integer overflow
+                GOTO            SETIOV3224		; will occur
+                NEGW            EXP,F
+
+                MOVLW           7                       ; do byte shift if EXP >= 8
+                CPFSGT          EXP
+                GOTO            SNIB3224
+                SUBWF           EXP,F			; EXP = EXP - 7
+                MOVFP           AARGB2,AARGB3		; save for rounding
+                MOVFP           AARGB1,AARGB2
+                MOVFP           AARGB0,AARGB1
+                CLRF            AARGB0,F
+                DCFSNZ          EXP,F			; EXP = EXP - 1
+                GOTO            SHIFT3224OK             ; shift completed if EXP = 0
+
+                CPFSGT          EXP                     ; do another byte shift if EXP >= 8
+                GOTO            SNIB3224A
+                SUBWF           EXP,F			; EXP = EXP - 7
+                MOVFP           AARGB2,AARGB3		; save for rounding
+                MOVFP           AARGB1,AARGB2
+                CLRF            AARGB1,F
+                DCFSNZ          EXP,F			; EXP = EXP - 1
+                GOTO            SHIFT3224OK             ; shift completed if EXP = 0
+
+                CPFSGT          EXP                     ; do another byte shift if EXP >= 8
+                GOTO            SNIB3224B
+                SUBWF           EXP,F			; EXP = EXP - 7
+                MOVFP           AARGB2,AARGB3		; save for rounding
+                CLRF            AARGB2,F
+                DCFSNZ          EXP,F			; EXP = EXP - 1
+                GOTO            SHIFT3224OK             ; shift completed if EXP = 0
+
+SNIB3224C       MOVLW           3                       ; do nibble shift if EXP >= 4
+                CPFSGT          EXP
+                GOTO            SHIFT3224C
+                SWAPF           AARGB3,W
+                ANDLW           0x0F
+                MOVPF           WREG,AARGB3
+                GOTO            SHIFT3224OK             ; shift completed if EXP = 0
+
+SHIFT3224C      BCF             _C                      ; at most 3 right shifts are required
+                RRCF            AARGB3,F                ; right shift by EXP
+                DCFSNZ          EXP,F
+                GOTO            SHIFT3224OK             ; shift completed if EXP = 0
+                BCF             _C
+                RRCF            AARGB3,F
+                DCFSNZ          EXP,F
+                GOTO            SHIFT3224OK             ; shift completed if EXP = 0
+                BCF             _C
+                RRCF            AARGB3,F
+                GOTO            SHIFT3224OK
+
+SNIB3224B       MOVLW           3                       ; do nibble shift if EXP >= 4
+                CPFSGT          EXP
+                GOTO            SHIFT3224B
+                SUBWF           EXP,F			; EXP = EXP - 3
+                SWAPF           AARGB2,W
+                MOVPF           WREG,AARGB3		; save for rounding
+                ANDLW           0x0F
+                MOVPF           WREG,AARGB2
+                DCFSNZ          EXP,F			; EXP = EXP - 1
+                GOTO            SHIFT3224OK             ; shift completed if EXP = 0
+
+SHIFT3224B      BCF             _C                      ; at most 3 right shifts are required
+                RRCF            AARGB2,F                ; right shift by EXP
+                RRCF            AARGB3,F
+                DCFSNZ          EXP,F
+                GOTO            SHIFT3224OK             ; shift completed if EXP = 0
+                BCF             _C
+                RRCF            AARGB2,F
+                RRCF            AARGB3,F
+                DCFSNZ          EXP,F
+                GOTO            SHIFT3224OK             ; shift completed if EXP = 0
+                BCF             _C
+                RRCF            AARGB2,F
+                RRCF            AARGB3,F
+                GOTO            SHIFT3224OK
+
+SNIB3224A       MOVLW           3                       ; do nibble shift if EXP >= 4
+                CPFSGT          EXP
+                GOTO            SHIFT3224A
+                SUBWF           EXP,F			; EXP = EXP - 3
+                SWAPF           AARGB2,W
+                MOVPF           WREG,AARGB3		; save for rounding
+                ANDLW           0x0F
+                MOVPF           WREG,AARGB2
+
+                SWAPF           AARGB1,W
+                ANDLW           0xF0
+                ADDWF           AARGB2,F
+
+                SWAPF           AARGB1,W
+                ANDLW           0x0F
+                MOVPF           WREG,AARGB1
+                DCFSNZ          EXP,F			; EXP = EXP - 1
+                GOTO            SHIFT3224OK             ; shift completed if EXP = 0
+
+SHIFT3224A      BCF             _C                      ; at most 3 right shifts are required
+                RRCF            AARGB1,F                ; right shift by EXP
+                RRCF            AARGB2,F
+                RRCF            AARGB3,F
+                DCFSNZ          EXP,F
+                GOTO            SHIFT3224OK             ; shift completed if EXP = 0
+                BCF             _C
+                RRCF            AARGB1,F
+                RRCF            AARGB2,F
+                RRCF            AARGB3,F
+                DCFSNZ          EXP,F
+                GOTO            SHIFT3224OK             ; shift completed if EXP = 0
+                BCF             _C
+                RRCF            AARGB1,F
+                RRCF            AARGB2,F
+                RRCF            AARGB3,F
+                GOTO            SHIFT3224OK
+
+SNIB3224        MOVLW           3                       ; do nibble shift if EXP >= 4
+                CPFSGT          EXP
+                GOTO            SHIFT3224
+                SUBWF           EXP,F			; EXP = EXP - 3
+                SWAPF           AARGB2,W
+                MOVPF           WREG,AARGB3		; save for rounding
+                ANDLW           0x0F
+                MOVPF           WREG,AARGB2
+
+                SWAPF           AARGB1,W
+                ANDLW           0xF0
+                ADDWF           AARGB2,F
+
+                SWAPF           AARGB1,W
+                ANDLW           0x0F
+                MOVPF           WREG,AARGB1
+
+                SWAPF           AARGB0,W
+                ANDLW           0xF0
+                ADDWF           AARGB1,F
+
+                SWAPF           AARGB0,W
+                ANDLW           0x0F
+                MOVPF           WREG,AARGB0
+                DCFSNZ          EXP,F			; EXP = EXP - 1
+                GOTO            SHIFT3224OK             ; shift completed if EXP = 0
+
+SHIFT3224       BCF             _C                      ; at most 3 right shifts are required
+                RRCF            AARGB0,F                ; right shift by EXP
+                RRCF            AARGB1,F
+                RRCF            AARGB2,F
+                RRCF            AARGB3,F
+                DCFSNZ          EXP,F
+                GOTO            SHIFT3224OK             ; shift completed if EXP = 0
+                BCF             _C
+                RRCF            AARGB0,F 
+                RRCF            AARGB1,F
+                RRCF            AARGB2,F
+                RRCF            AARGB3,F
+                DCFSNZ          EXP,F
+                GOTO            SHIFT3224OK             ; shift completed if EXP = 0
+                BCF             _C
+                RRCF            AARGB0,F 
+                RRCF            AARGB1,F
+                RRCF            AARGB2,F
+                RRCF            AARGB3,F
+
+SHIFT3224OK
+		BTFSC           FPFLAGS,RND		; is rounding enabled?
+                BTFSS           AARGB3,MSB		; is NSB > 0x80?
+                GOTO            INT3224OK
+		BSF		_C			; set carry for rounding
+		MOVLW		0x80
+		CPFSGT		AARGB3			; if NSB = 0x80, select even
+		RRCF		AARGB2,W		; using lsb in carry
+                CLRF            WREG,F
+                ADDWFC          AARGB2,F
+                ADDWFC          AARGB1,F
+                ADDWFC          AARGB0,F
+                BTFSC           AARGB0,MSB
+                GOTO            SETIOV3224
+
+INT3224OK       BTFSS           SIGN,MSB                ; if sign bit set, negate               
+                RETLW           0
+                COMF            AARGB2,F
+                COMF            AARGB1,F
+                COMF            AARGB0,F
+                INCF            AARGB2,F
+		CLRF		WREG,F
+                ADDWFC          AARGB1,F
+                ADDWFC          AARGB0,F
+                RETLW           0
+
+SETIOV3224	BSF             FPFLAGS,IOV             ; set integer overflow flag
+                BTFSS           FPFLAGS,SAT             ; test for saturation
+                RETLW           0xFF                    ; return error code in WREG
+
+                CLRF            AARGB0,F                ; saturate to largest two's
+                BTFSS           SIGN,MSB                ; complement 24 bit integer
+                SETF            AARGB0,F                ; SIGN = 0, 0x 7F FF FF
+                MOVPF           AARGB0,AARGB1             ; SIGN = 1, 0x 80 00 00
+                MOVPF           AARGB0,AARGB2
+                RLCF            SIGN,F
+                RRCF            AARGB0,F
+                RETLW           0xFF                    ; return error code in WREG
+
+;**********************************************************************************************
+;**********************************************************************************************
+
+;       Float to integer conversion
+
+;       Input:  32 bit floating point number in AEXP, AARGB0, AARGB1, AARGB2
+
+;       Use:    CALL    INT3232
+
+;       Output: 32 bit 2's complement integer right justified in AARGB0, AARGB1, AARGB2,
+;               AARGB3
+
+;       Result: AARG  <--  INT( AARG )
+
+;       Max Timing:     11+54+17 = 82 clks              RND = 0
+;                       11+54+26 = 91 clks              RND = 1, SAT = 0
+;                       11+54+28 = 93 clks              RND = 1, SAT = 1
+
+;       Min Timing:     4 clks
+
+;       PM: 249                                         DM: 9
+
+;----------------------------------------------------------------------------------------------
+
+INT3232
+		CLRF		AARGB3,W
+		CPFSGT		EXP			; test for zero argument
+		RETLW		0x00
+		MOVPF           AARGB0,SIGN		; save sign in SIGN
+                BSF             AARGB0,MSB		; make MSB explicit
+
+                CLRF            AARGB4,F
+
+                MOVLW           EXPBIAS+0x1F		; remove bias from EXP
+		SUBWF		EXP,W
+
+                BTFSS		WREG,MSB		; if >= 31, integer overflow
+                GOTO            SETIOV3232		; will occur
+                NEGW            EXP,F
+
+                MOVLW           7                       ; do byte shift if EXP >= 8
+                CPFSGT          EXP
+                GOTO            SNIB3232
+                SUBWF           EXP,F			; EXP = EXP - 7
+                MOVFP		AARGB3,AARGB4		; save for rounding
+                MOVFP           AARGB2,AARGB3
+                MOVFP           AARGB1,AARGB2
+                MOVFP           AARGB0,AARGB1
+                CLRF            AARGB0,F
+                DCFSNZ          EXP,F			; EXP = EXP - 1
+                GOTO            SHIFT3232OK             ; shift completed if EXP = 0
+
+                CPFSGT          EXP                     ; do another byte shift if EXP >= 8
+                GOTO            SNIB3232A
+                SUBWF           EXP,F			; EXP = EXP - 7
+                MOVFP		AARGB3,AARGB4		; save for rounding
+                MOVFP           AARGB2,AARGB3
+                MOVFP           AARGB1,AARGB2
+                CLRF            AARGB1,F
+                DCFSNZ          EXP,F			; EXP = EXP - 1
+                GOTO            SHIFT3232OK             ; shift completed if EXP = 0
+
+                CPFSGT          EXP                     ; do another byte shift if EXP >= 8
+                GOTO            SNIB3232B
+                SUBWF           EXP,F			; EXP = EXP - 7
+                MOVFP		AARGB3,AARGB4		; save for rounding
+                MOVFP           AARGB2,AARGB3
+                CLRF            AARGB2,F
+                DCFSNZ          EXP,F			; EXP = EXP - 1
+                GOTO            SHIFT3232OK             ; shift completed if EXP = 0
+
+                CPFSGT          EXP                     ; do another byte shift if EXP >= 8
+                GOTO            SNIB3232C
+                SUBWF           EXP,F			; EXP = EXP - 7
+                MOVFP		AARGB3,AARGB4		; save for rounding
+                CLRF            AARGB3,F
+                DCFSNZ          EXP,F			; EXP = EXP - 1
+                GOTO            SHIFT3232OK             ; shift completed if EXP = 0
+
+SNIB3232D       MOVLW           3                       ; do nibble shift if EXP >= 4
+                CPFSGT          EXP
+                GOTO            SHIFT3232D
+                SWAPF           AARGB4,W
+                ANDLW           0x0F
+                MOVPF           WREG,AARGB4
+                GOTO            SHIFT3232OK             ; shift completed if EXP = 0
+
+SHIFT3232D      BCF             _C                      ; at most 3 right shifts are required
+                RRCF            AARGB4,F                ; right shift by EXP
+                DCFSNZ          EXP,F
+                GOTO            SHIFT3232OK             ; shift completed if EXP = 0
+                BCF             _C
+                RRCF            AARGB4,F
+                DCFSNZ          EXP,F
+                GOTO            SHIFT3232OK             ; shift completed if EXP = 0
+                BCF             _C
+                RRCF            AARGB4,F
+                GOTO            SHIFT3232OK
+
+SNIB3232C       MOVLW           3                       ; do nibble shift if EXP >= 4
+                CPFSGT          EXP
+                GOTO            SHIFT3232C
+                SUBWF           EXP,F			; EXP = EXP - 3
+                SWAPF           AARGB3,W
+                MOVPF           WREG,AARGB4		; save for rounding
+                ANDLW           0x0F
+                MOVPF           WREG,AARGB3
+                DCFSNZ          EXP,F			; EXP = EXP - 1
+                GOTO            SHIFT3232OK             ; shift completed if EXP = 0
+
+SHIFT3232C      BCF             _C                      ; at most 3 right shifts are required
+                RRCF            AARGB3,F                ; right shift by EXP
+		RRCF		AARGB4,F
+                DCFSNZ          EXP,F
+                GOTO            SHIFT3232OK             ; shift completed if EXP = 0
+                BCF             _C
+                RRCF            AARGB3,F
+		RRCF		AARGB4,F
+                DCFSNZ          EXP,F
+                GOTO            SHIFT3232OK             ; shift completed if EXP = 0
+                BCF             _C
+                RRCF            AARGB3,F
+		RRCF		AARGB4,F
+                GOTO            SHIFT3232OK
+
+SNIB3232B       MOVLW           3                       ; do nibble shift if EXP >= 4
+                CPFSGT          EXP
+                GOTO            SHIFT3232B
+                SUBWF           EXP,F			; EXP = EXP - 3
+                SWAPF           AARGB3,W
+                MOVPF           WREG,AARGB4		; save for rounding
+                ANDLW           0x0F
+                MOVPF           WREG,AARGB3
+
+                SWAPF           AARGB2,W
+                ANDLW           0xF0
+                ADDWF           AARGB3,F
+
+                SWAPF           AARGB2,W
+                ANDLW           0x0F
+                MOVPF           WREG,AARGB2
+                DCFSNZ          EXP,F			; EXP = EXP - 1
+                GOTO            SHIFT3232OK             ; shift completed if EXP = 0
+
+SHIFT3232B      BCF             _C                      ; at most 3 right shifts are required
+                RRCF            AARGB2,F                ; right shift by EXP
+                RRCF            AARGB3,F
+		RRCF		AARGB4,F
+                DCFSNZ          EXP,F
+                GOTO            SHIFT3232OK             ; shift completed if EXP = 0
+                BCF             _C
+                RRCF            AARGB2,F
+                RRCF            AARGB3,F
+		RRCF		AARGB4,F
+                DCFSNZ          EXP,F
+                GOTO            SHIFT3232OK             ; shift completed if EXP = 0
+                BCF             _C
+                RRCF            AARGB2,F
+                RRCF            AARGB3,F
+		RRCF		AARGB4,F
+                GOTO            SHIFT3232OK
+
+SNIB3232A       MOVLW           3                       ; do nibble shift if EXP >= 4
+                CPFSGT          EXP
+                GOTO            SHIFT3232A
+                SUBWF           EXP,F			; EXP = EXP - 3
+                SWAPF           AARGB3,W
+                MOVPF           WREG,AARGB4		; save for rounding
+                ANDLW           0x0F
+                MOVPF           WREG,AARGB3
+
+                SWAPF           AARGB2,W
+                ANDLW           0xF0
+                ADDWF           AARGB3,F
+
+                SWAPF           AARGB2,W
+                ANDLW           0x0F
+                MOVPF           WREG,AARGB2
+
+                SWAPF           AARGB1,W
+                ANDLW           0xF0
+                ADDWF           AARGB2,F
+
+                SWAPF           AARGB1,W
+                ANDLW           0x0F
+                MOVPF           WREG,AARGB1
+                DCFSNZ          EXP,F			; EXP = EXP - 1
+                GOTO            SHIFT3232OK             ; shift completed if EXP = 0
+
+SHIFT3232A      BCF             _C                      ; at most 3 right shifts are required
+                RRCF            AARGB1,F                ; right shift by EXP
+                RRCF            AARGB2,F
+                RRCF            AARGB3,F
+		RRCF		AARGB4,F
+                DCFSNZ          EXP,F
+                GOTO            SHIFT3232OK             ; shift completed if EXP = 0
+                BCF             _C
+                RRCF            AARGB1,F
+                RRCF            AARGB2,F
+                RRCF            AARGB3,F
+		RRCF		AARGB4,F
+                DCFSNZ          EXP,F
+                GOTO            SHIFT3232OK             ; shift completed if EXP = 0
+                BCF             _C
+                RRCF            AARGB1,F
+                RRCF            AARGB2,F
+                RRCF            AARGB3,F
+		RRCF		AARGB4,F
+                GOTO            SHIFT3232OK
+
+SNIB3232        MOVLW           3                       ; do nibble shift if EXP >= 4
+                CPFSGT          EXP
+                GOTO            SHIFT3232
+                SUBWF           EXP,F			; EXP = EXP - 3
+                SWAPF           AARGB3,W
+                MOVPF           WREG,AARGB4		; save for rounding
+                ANDLW           0x0F
+                MOVPF           WREG,AARGB3
+
+                SWAPF           AARGB2,W
+                ANDLW           0xF0
+                ADDWF           AARGB3,F
+
+                SWAPF           AARGB2,W
+                ANDLW           0x0F
+                MOVPF           WREG,AARGB2
+
+                SWAPF           AARGB1,W
+                ANDLW           0xF0
+                ADDWF           AARGB2,F
+
+                SWAPF           AARGB1,W
+                ANDLW           0x0F
+                MOVPF           WREG,AARGB1
+
+                SWAPF           AARGB0,W
+                ANDLW           0xF0
+                ADDWF           AARGB1,F
+
+                SWAPF           AARGB0,W
+                ANDLW           0x0F
+                MOVPF           WREG,AARGB0
+                DCFSNZ          EXP,F			; EXP = EXP - 1
+                GOTO            SHIFT3232OK             ; shift completed if EXP = 0
+
+SHIFT3232       BCF             _C                      ; at most 3 right shifts are required
+                RRCF            AARGB0,F                ; right shift by EXP
+                RRCF            AARGB1,F
+                RRCF            AARGB2,F
+                RRCF            AARGB3,F
+		RRCF		AARGB4,F
+                DCFSNZ          EXP,F
+                GOTO            SHIFT3232OK             ; shift completed if EXP = 0
+                BCF             _C
+                RRCF            AARGB0,F 
+                RRCF            AARGB1,F
+                RRCF            AARGB2,F
+                RRCF            AARGB3,F
+		RRCF		AARGB4,F
+                DCFSNZ          EXP,F
+                GOTO            SHIFT3232OK             ; shift completed if EXP = 0
+                BCF             _C
+                RRCF            AARGB0,F 
+                RRCF            AARGB1,F
+                RRCF            AARGB2,F
+                RRCF            AARGB3,F
+		RRCF		AARGB4,F
+
+SHIFT3232OK
+		BTFSC           FPFLAGS,RND		; is rounding enabled?
+                BTFSS           AARGB4,MSB		; is NSB > 0x80?
+                GOTO            INT3232OK
+		BSF		_C			; set carry for rounding
+		MOVLW		0x80
+		CPFSGT		AARGB4			; if NSB = 0x80, select even
+		RRCF		AARGB3,W		; using lsb in carry
+                CLRF            WREG,F
+		ADDWFC		AARGB3,F
+		ADDWFC		AARGB2,F
+                ADDWFC          AARGB1,F
+                ADDWFC          AARGB0,F
+                BTFSC           AARGB0,MSB
+                GOTO            SETIOV3232
+
+INT3232OK       BTFSS           SIGN,MSB                ; if sign bit set, negate               
+                RETLW           0
+                COMF            AARGB3,F
+                COMF            AARGB2,F
+                COMF            AARGB1,F
+                COMF            AARGB0,F
+                INCF            AARGB3,F
+		CLRF		WREG,F
+                ADDWFC          AARGB2,F
+                ADDWFC          AARGB1,F
+                ADDWFC          AARGB0,F
+                RETLW           0
+
+SETIOV3232	BSF             FPFLAGS,IOV             ; set integer overflow flag
+                BTFSS           FPFLAGS,SAT             ; test for saturation
+                RETLW           0xFF                    ; return error code in WREG
+
+                CLRF            AARGB0,F                ; saturate to largest two's
+                BTFSS           SIGN,MSB                ; complement 32 bit integer
+                SETF            AARGB0,F                ; SIGN = 0, 0x 7F FF FF FF
+                MOVPF           AARGB0,AARGB1		; SIGN = 1, 0x 80 00 00 00
+                MOVPF           AARGB0,AARGB2
+                MOVPF           AARGB0,AARGB3
+                RLCF            SIGN,F
+                RRCF            AARGB0,F
+                RETLW           0xFF                    ; return error code in WREG
+
+;**********************************************************************************************
+;**********************************************************************************************
+
+;       Floating Point Multiply
+
+;       Input:  32 bit floating point number in AEXP, AARGB0, AARGB1, AARGB2
+;               32 bit floating point number in BEXP, BARGB0, BARGB1, BARGB2
+
+;       Use:    CALL    FPM32
+
+;       Output: 32 bit floating point product in AEXP, AARGB0, AARGB1, AARGB2
+
+;       Result: AARG  <--  AARG * BARG
+
+;       Max Timing:     19+73+8 = 100 clks		RND = 0, SAT = 0
+;                       19+73+22 = 114 clks		RND = 1, SAT = 0
+;                       19+73+30 = 122 clks		RND = 1, SAT = 1
+
+;       Min Timing:     5+6 = 11 clks			AARG * BARG = 0
+
+;       PM: 123						DM: 15
+
+
+;----------------------------------------------------------------------------------------------
+
+FPM32           CLRF            AARGB3,W                ; test for zero arguments
+                CPFSEQ          BEXP
+                CPFSGT          AEXP
+                GOTO            RES032
+
+M32BNE0         MOVFP           AARGB0,WREG
+                XORWF           BARGB0,W
+                MOVPF           WREG,SIGN               ; save sign in SIGN
+
+                MOVFP           BEXP,WREG
+                ADDWF           EXP,F
+                MOVLW           EXPBIAS-1
+                BTFSS           _C
+                GOTO            MTUN32
+        
+                SUBWF           EXP,F			; remove bias and overflow test
+                BTFSC           _C
+                GOTO            SETFOV32
+                GOTO            MOK32
+
+MTUN32          SUBWF           EXP,F			; remove bias and underflow test
+                BTFSS           _C
+                GOTO            SETFUN32
+
+MOK32           BSF             AARGB0,MSB              ; make argument MSB's explicit
+                BSF             BARGB0,MSB
+
+		MOVPF		AARGB0,TEMPB0		; multiply mantissas	
+		MOVPF		AARGB1,TEMPB1	
+		MOVPF		AARGB2,TEMPB2	
+
+		MOVFP		AARGB2,WREG
+		MULWF		BARGB2
+		MOVPF		PRODH,AARGB4
+		
+		MOVFP		AARGB1,WREG
+		MULWF		BARGB1
+		MOVPF		PRODH,AARGB2
+		MOVPF		PRODL,AARGB3
+
+		MULWF		BARGB2
+		MOVPF		PRODL,WREG
+		ADDWF		AARGB4,F
+		MOVPF		PRODH,WREG
+		ADDWFC		AARGB3,F
+		CLRF		WREG,F
+		ADDWFC		AARGB2,F
+
+		MOVFP		TEMPB2,WREG
+		MULWF		BARGB1
+		MOVPF		PRODL,WREG
+		ADDWF		AARGB4,F
+		MOVPF		PRODH,WREG
+		ADDWFC		AARGB3,F
+		CLRF		WREG,F
+		ADDWFC		AARGB2,F
+
+		MOVFP		AARGB0,WREG
+		MULWF		BARGB2
+		MOVPF		PRODL,WREG
+		ADDWF		AARGB3,F
+		MOVPF		PRODH,WREG
+		ADDWFC		AARGB2,F
+		MOVFP		AARGB0,WREG
+		MULWF		BARGB1
+		CLRF		AARGB1,W
+		ADDWFC		AARGB1,F
+		MOVPF		PRODL,WREG
+		ADDWF		AARGB2,F
+		MOVPF		PRODH,WREG
+		ADDWFC		AARGB1,F
+
+		MOVFP		TEMPB2,WREG
+		MULWF		BARGB0
+		MOVPF		PRODL,WREG
+		ADDWF		AARGB3,F
+		MOVPF		PRODH,WREG
+		ADDWFC		AARGB2,F
+		CLRF		AARGB0,W
+		ADDWFC		AARGB1,F
+		ADDWFC		AARGB0,F
+
+		MOVFP		TEMPB1,WREG
+		MULWF		BARGB0
+		MOVPF		PRODL,WREG
+		ADDWF		AARGB2,F
+		MOVPF		PRODH,WREG
+		ADDWFC		AARGB1,F
+		CLRF		WREG,F
+		ADDWFC		AARGB0,F
+
+		MOVFP		TEMPB0,WREG
+		MULWF		BARGB0
+		MOVPF		PRODL,WREG
+		ADDWF		AARGB1,F
+		MOVPF		PRODH,WREG
+		ADDWFC		AARGB0,F
+
+		BTFSC		AARGB0,MSB		; check for postnormalization
+		GOTO		MROUND32
+		RLCF		AARGB3,F
+		RLCF		AARGB2,F
+		RLCF		AARGB1,F
+		RLCF		AARGB0,F
+		DECF		EXP,F
+		BTFSC		_Z
+		GOTO		SETFUN32
+
+MROUND32
+		BTFSC           FPFLAGS,RND		; is rounding enabled?
+                BTFSS           AARGB3,MSB		; is NSB > 0x80?
+                GOTO            MUL32OK
+		BSF		_C			; set carry for rounding
+		MOVLW		0x80
+		CPFSGT		AARGB3			; if NSB = 0x80, select even
+		RRCF		AARGB2,W		; using lsb in carry
+                CLRF            WREG,F
+                ADDWFC          AARGB2,F
+                ADDWFC          AARGB1,F
+                ADDWFC          AARGB0,F
+
+                BTFSS           _C                      ; has rounding caused carryout?
+                GOTO            MUL32OK
+                RRCF            AARGB0,F                ; if so, right shift
+                RRCF            AARGB1,F
+                RRCF            AARGB2,F
+                INFSNZ          EXP,F			; test for floating point overflow
+                GOTO            SETFOV32
+
+MUL32OK         BTFSS           SIGN,MSB
+                BCF             AARGB0,MSB		; clear explicit MSB if positive
+
+                RETLW           0  
+
+SETFOV32        BSF             FPFLAGS,FOV             ; set floating point underflag
+                BTFSS           FPFLAGS,SAT             ; test for saturation
+                RETLW           0xFF                    ; return error code in WREG
+
+                SETF            AEXP,F			; saturate to largest floating
+                SETF            AARGB0,F                ; point number = 0x FF 7F FF FF
+                SETF            AARGB1,F		; modulo the appropriate sign bit
+                SETF            AARGB2,F
+                RLCF            SIGN,F
+                RRCF            AARGB0,F
+                RETLW           0xFF                    ; return error code in WREG
+
+
+;**********************************************************************************************
+;**********************************************************************************************
+
+;       Floating Point Divide
+
+;       Input:  32 bit floating point dividend in AEXP, AARGB0, AARGB1, AARGB2
+;               32 bit floating point divisor in BEXP, BARGB0, BARGB1, BARGB2
+
+;       Use:    CALL    FPD32
+
+;       Output: 32 bit floating point quotient in AEXP, AARGB0, AARGB1, AARGB2
+
+;       Result: AARG  <--  AARG / BARG
+
+;       Max Timing:     10+34+69+80+111+11+8 = 323 clks RND = 0
+;                       10+34+69+80+111+11+22 = 337 clks RND = 1, SAT = 0
+;                       10+34+69+80+111+11+30 = 345 clks RND = 1, SAT = 1
+
+;       Min Timing:     6+6 = 12 clks           AARG = 0
+
+;       PM: 350+257 = 607			DM: 20
+
+;	In addition to those registers defined in MATH17.INC, this routine uses
+;	TBLPTRL and TBLPTRH without saving and restoring.
+
+;----------------------------------------------------------------------------------------------
+
+FPD32SEED	macro
+
+;       Timing:     34 clks
+
+;	PM: 32+257 = 289
+
+;	generation of F0 by interpolating between consecutive 16 bit approximations
+;	to the reciprocal of BARG, with the top 8 explicit bits of BARG as a pointer
+;	and the remaining 7 explicit bits as the argument to linear interpolation.
+
+
+		MOVLW		HIGH (IBTBL256I)	; access table for F0
+		MOVWF		TBLPTRH
+		RLCF		BARGB1,W
+		RLCF		BARGB0,W
+		ADDLW		LOW (IBTBL256I)
+		MOVWF		TBLPTRL
+		BTFSC		_C
+		INCF		TBLPTRH,F
+		TABLRD		0,1,TEMPB0
+		TLRD		1,TEMPB0
+		TABLRD		0,0,TEMPB1
+		TLRD		0,AARGB5
+
+		MOVFP		AARGB5,WREG		; calculate difference
+		SUBWF		TEMPB1,W
+		MOVWF		AARGB5
+
+		BCF		_C			; interpolate
+		RLCF		BARGB2,W
+		MULWF		AARGB5
+		MOVPF		PRODH,TBLPTRH
+		RLCF		BARGB1,W
+		MULWF		AARGB5
+		MOVPF		PRODL,WREG
+		ADDWF		TBLPTRH,F
+		BTFSC		_C
+		INCF		PRODH,F
+
+		CLRF		TEMPB2,F
+		MOVFP		TBLPTRH,WREG
+		SUBWF		TEMPB2,F
+		MOVPF		PRODH,WREG
+		SUBWFB		TEMPB1,F
+		CLRF		WREG,F
+		SUBWFB		TEMPB0,F		; F0
+
+		endm
+
+;----------------------------------------------------------------------------------------------
+
+FPD32SEEDS1	macro
+
+;       Timing:     51 clks
+
+;	PM: 49+129 = 178
+
+;	generation of F0 by interpolating between consecutive 16 bit approximations
+;	to the reciprocal of BARG, with the top 7 explicit bits of BARG as a pointer
+;	and the remaining 16 explicit bits as the argument to linear interpolation.
+
+
+		MOVLW		HIGH (IBTBL128I)	; access table for F0
+		MOVWF		TBLPTRH
+		MOVFP		BARGB0,WREG
+		ANDLW		0x7F
+		ADDLW		LOW (IBTBL128I)
+		MOVWF		TBLPTRL
+		BTFSC		_C
+		INCF		TBLPTRH,F
+		TABLRD		0,1,TEMPB0
+		TLRD		1,TEMPB0
+		TABLRD		0,0,TEMPB1
+		TLRD		1,AARGB4
+		TLRD		0,AARGB5
+
+		MOVFP		AARGB5,WREG		; calculate difference
+		SUBWF		TEMPB1,W
+		MOVWF		AARGB5
+		MOVFP		AARGB4,WREG
+		SUBWFB		TEMPB0,W
+		MOVWF		AARGB4
+
+		MOVPF		AARGB5,TEMPB2	
+
+		MOVFP		AARGB5,WREG
+		MULWF		BARGB2
+		MOVPF		PRODH,TBLPTRH
+		
+		MOVFP		AARGB4,WREG
+		MULWF		BARGB1
+		MOVPF		PRODH,AARGB4
+		MOVPF		PRODL,AARGB5
+
+		MULWF		BARGB2
+		MOVPF		PRODL,WREG
+		ADDWF		TBLPTRH,F
+		MOVPF		PRODH,WREG
+		ADDWFC		AARGB5,F
+		CLRF		WREG,F
+		ADDWFC		AARGB4,F
+
+		MOVFP		TEMPB2,WREG
+		MULWF		BARGB1
+		MOVPF		PRODL,WREG
+		ADDWF		TBLPTRH,F
+		MOVPF		PRODH,WREG
+		ADDWFC		AARGB5,F
+		CLRF		WREG,F
+		ADDWFC		AARGB4,F
+
+		CLRF		TEMPB2,F
+		MOVFP		TBLPTRH,WREG
+		SUBWF		TEMPB2,F
+		MOVFP		AARGB5,WREG
+		SUBWFB		TEMPB1,F
+		MOVFP		AARGB4,WREG
+		SUBWFB		TEMPB0,F		; F0
+
+		endm
+
+;----------------------------------------------------------------------------------------------
+
+FPD32SEEDS	macro
+
+;       Timing:     75 clks
+
+;	PM: 73+65 = 138
+
+;	generation of F0 by interpolating between consecutive 16 bit approximations
+;	to the reciprocal of BARG, with the top 6 explicit bits of BARG as a pointer
+;	and the remaining 17 explicit bits as the argument to linear interpolation.
+
+
+		MOVLW		HIGH (IBTBL64I)	; access table for F0
+		MOVWF		TBLPTRH
+		RRCF		BARGB0,W
+		ANDLW		0x3F
+		ADDLW		LOW (IBTBL64I)
+		MOVWF		TBLPTRL
+		BTFSC		_C
+		INCF		TBLPTRH,F
+		TABLRD		0,1,TEMPB0
+		TLRD		1,TEMPB0
+		TABLRD		0,0,TEMPB1
+		TLRD		1,AARGB4
+		TLRD		0,AARGB5
+
+		MOVFP		AARGB5,WREG		; calculate difference
+		SUBWF		TEMPB1,W
+		MOVWF		AARGB5
+		MOVFP		AARGB4,WREG
+		SUBWFB		TEMPB0,W
+		MOVWF		AARGB4
+
+		MOVPF		AARGB4,TBLPTRH	
+		MOVPF		AARGB5,TBLPTRL	
+
+		MOVFP		BARGB2,WREG
+		MULWF		AARGB5
+		MOVPF		PRODH,TMR0H
+		MOVPF		PRODL,TMR0L
+		
+		MOVFP		BARGB1,WREG
+		MULWF		AARGB4
+		MOVPF		PRODH,AARGB5
+		MOVPF		PRODL,TEMPB2
+
+		MULWF		TBLPTRL
+		MOVPF		PRODL,WREG
+		ADDWF		TMR0H,F
+		MOVPF		PRODH,WREG
+		ADDWFC		TEMPB2,F
+		CLRF		WREG,F
+		ADDWFC		AARGB5,F
+
+		MOVFP		BARGB2,WREG
+		MULWF		TBLPTRH
+		MOVPF		PRODL,WREG
+		ADDWF		TMR0H,F
+		MOVPF		PRODH,WREG
+		ADDWFC		TEMPB2,F
+		CLRF		WREG,F
+		ADDWFC		AARGB5,F
+	
+		MOVFP		BARGB0,WREG
+		ANDLW		0x01
+		MULWF		TBLPTRL
+		MOVPF		PRODL,WREG
+		ADDWF		TEMPB2,F
+		MOVPF		PRODH,WREG
+		ADDWFC		AARGB5,F
+		MOVFP		BARGB0,WREG
+		ANDLW		0x01
+		MULWF		TBLPTRH
+		CLRF		AARGB4,W
+		ADDWFC		AARGB4,F
+		MOVPF		PRODL,WREG
+		ADDWF		AARGB5,F
+		MOVPF		PRODH,WREG
+		ADDWFC		AARGB4,F
+
+		BCF		_C
+		RRCF		AARGB4,F
+		RRCF		AARGB5,F
+		RRCF		TEMPB2,F
+		RRCF		TMR0H,F
+
+		MOVFP		TEMPB2,TBLPTRH
+		CLRF		TEMPB2,F
+		MOVFP		TMR0H,WREG
+		SUBWF		TEMPB2,F
+		MOVFP		TBLPTRH,WREG
+		SUBWFB		TEMPB1,F
+		MOVFP		AARGB5,WREG
+		SUBWFB		TEMPB0,F		; F0
+
+		endm
+
+;----------------------------------------------------------------------------------------------
+
+FPD32           CLRF            TEMPB3,W		; clear exponent modification
+                CPFSGT          BEXP                    ; test for divide by zero
+                GOTO            SETFDZ32
+
+                CPFSGT          AEXP
+                GOTO            RES032
+
+D32BNE0         MOVFP           AARGB0,WREG
+                XORWF           BARGB0,W
+                MOVPF           WREG,SIGN               ; save sign in SIGN
+
+                BSF             AARGB0,MSB              ; make argument MSB's explicit
+                BSF             BARGB0,MSB
+
+		FPD32SEED				; generation of F0
+ 
+		MOVPF		AARGB0,AARGB5		; A0 = F0 * A	
+		MOVPF		AARGB1,TBLPTRH	
+		MOVPF		AARGB2,TBLPTRL	
+		
+		MOVFP		AARGB2,WREG
+		MULWF		TEMPB2
+		MOVPF		PRODH,AARGB4
+		
+		MOVFP		AARGB1,WREG
+		MULWF		TEMPB1
+		MOVPF		PRODH,AARGB2
+		MOVPF		PRODL,AARGB3
+
+		MULWF		TEMPB2
+		MOVPF		PRODL,WREG
+		ADDWF		AARGB4,F
+		MOVPF		PRODH,WREG
+		ADDWFC		AARGB3,F
+		CLRF		WREG,F
+		ADDWFC		AARGB2,F
+
+		MOVFP		TBLPTRL,WREG
+		MULWF		TEMPB1
+		MOVPF		PRODL,WREG
+		ADDWF		AARGB4,F
+		MOVPF		PRODH,WREG
+		ADDWFC		AARGB3,F
+		CLRF		WREG,F
+		ADDWFC		AARGB2,F
+	
+		MOVFP		AARGB0,WREG
+		MULWF		TEMPB2
+		MOVPF		PRODL,WREG
+		ADDWF		AARGB3,F
+		MOVPF		PRODH,WREG
+		ADDWFC		AARGB2,F
+		MOVFP		AARGB0,WREG
+		MULWF		TEMPB1
+		CLRF		AARGB1,W
+		ADDWFC		AARGB1,F
+		MOVPF		PRODL,WREG
+		ADDWF		AARGB2,F
+		MOVPF		PRODH,WREG
+		ADDWFC		AARGB1,F
+
+		MOVFP		TBLPTRL,WREG
+		MULWF		TEMPB0
+		MOVPF		PRODL,WREG
+		ADDWF		AARGB3,F
+		MOVPF		PRODH,WREG
+		ADDWFC		AARGB2,F
+		CLRF		AARGB0,W
+		ADDWFC		AARGB1,F
+		ADDWFC		AARGB0,F
+
+		MOVFP		TBLPTRH,WREG
+		MULWF		TEMPB0
+		MOVPF		PRODL,WREG
+		ADDWF		AARGB2,F
+		MOVPF		PRODH,WREG
+		ADDWFC		AARGB1,F
+		CLRF		WREG,F
+		ADDWFC		AARGB0,F
+
+		MOVFP		AARGB5,WREG
+		MULWF		TEMPB0
+		MOVPF		PRODL,WREG
+		ADDWF		AARGB1,F
+		MOVPF		PRODH,WREG
+		ADDWFC		AARGB0,F
+	
+		BTFSC		AARGB0,MSB
+		GOTO		DAOK32
+		RLCF		AARGB3,F
+		RLCF		AARGB2,F
+		RLCF		AARGB1,F
+		RLCF		AARGB0,F
+		DECF		TEMPB3,F
+
+DAOK32
+		MOVFP		BARGB0,AARGB5		; B0 = F0 * B	
+		MOVFP		BARGB1,TBLPTRH	
+		MOVFP		BARGB2,TBLPTRL	
+		
+		MOVFP		BARGB2,WREG
+		MULWF		TEMPB2
+		MOVPF		PRODH,AARGB4
+		
+		MOVFP		BARGB1,WREG
+		MULWF		TEMPB1
+		MOVPF		PRODH,BARGB2
+		MOVPF		PRODL,BARGB3
+
+		MULWF		TEMPB2
+		MOVPF		PRODL,WREG
+		ADDWF		AARGB4,F
+		MOVPF		PRODH,WREG
+		ADDWFC		BARGB3,F
+		CLRF		WREG,F
+		ADDWFC		BARGB2,F
+
+		MOVFP		TBLPTRL,WREG
+		MULWF		TEMPB1
+		MOVPF		PRODL,WREG
+		ADDWF		AARGB4,F
+		MOVPF		PRODH,WREG
+		ADDWFC		BARGB3,F
+		CLRF		WREG,F
+		ADDWFC		BARGB2,F
+	
+		MOVFP		BARGB0,WREG
+		MULWF		TEMPB2
+		MOVPF		PRODL,WREG
+		ADDWF		BARGB3,F
+		MOVPF		PRODH,WREG
+		ADDWFC		BARGB2,F
+		MOVFP		BARGB0,WREG
+		MULWF		TEMPB1
+		CLRF		BARGB1,W
+		ADDWFC		BARGB1,F
+		MOVPF		PRODL,WREG
+		ADDWF		BARGB2,F
+		MOVPF		PRODH,WREG
+		ADDWFC		BARGB1,F
+
+		MOVFP		TBLPTRL,WREG
+		MULWF		TEMPB0
+		MOVPF		PRODL,WREG
+		ADDWF		BARGB3,F
+		MOVPF		PRODH,WREG
+		ADDWFC		BARGB2,F
+		CLRF		BARGB0,W
+		ADDWFC		BARGB1,F
+		ADDWFC		BARGB0,F
+
+		MOVFP		TBLPTRH,WREG
+		MULWF		TEMPB0
+		MOVPF		PRODL,WREG
+		ADDWF		BARGB2,F
+		MOVPF		PRODH,WREG
+		ADDWFC		BARGB1,F
+		CLRF		WREG,F
+		ADDWFC		BARGB0,F
+
+		MOVFP		AARGB5,WREG
+		MULWF		TEMPB0
+		MOVPF		PRODL,WREG
+		ADDWF		BARGB1,F
+		MOVPF		PRODH,WREG
+		ADDWFC		BARGB0,F
+	
+		BTFSS		BARGB0,MSB
+		BTFSC		BARGB0,MSB-1
+		GOTO		DBOK32
+		RLCF		AARGB4,F
+		RLCF		BARGB3,F
+		RLCF		BARGB2,F
+		RLCF		BARGB1,F
+		RLCF		BARGB0,F
+		INCF		TEMPB3,F
+
+DBOK32
+		COMF		BARGB3,F
+		COMF		BARGB2,F
+		COMF		BARGB1,F		; F1 = 2 - B0
+		COMF		BARGB0,F
+		INCF		BARGB3,F
+		CLRF		WREG,F
+		ADDWFC		BARGB2,F
+		ADDWFC		BARGB1,F
+		ADDWFC		BARGB0,F
+
+		MOVPF		AARGB0,TEMPB0		; A1 = F1 * A0
+		MOVPF		AARGB1,TEMPB1	
+		MOVPF		AARGB2,TEMPB2	
+		MOVPF		AARGB3,TBLPTRL	
+		
+		MOVFP		AARGB2,WREG
+		MULWF		BARGB2
+		MOVPF		PRODH,AARGB4
+	
+		MOVFP		AARGB1,WREG
+		MULWF		BARGB3
+		MOVPF		PRODH,WREG
+		ADDWF		AARGB4,F
+		MOVFP		AARGB1,WREG
+		MULWF		BARGB2
+		CLRF		AARGB3,W
+		ADDWFC		AARGB3,F
+		MOVPF		PRODL,WREG
+		ADDWF		AARGB4,F
+		MOVPF		PRODH,WREG
+		ADDWFC		AARGB3,F
+
+		MOVFP		TBLPTRL,WREG
+		MULWF		BARGB1
+		MOVPF		PRODH,WREG
+		ADDWF		AARGB4,F
+		CLRF		AARGB2,W
+		ADDWFC		AARGB3,F
+		ADDWFC		AARGB2,F
+
+		MOVFP		TEMPB2,WREG
+		MULWF		BARGB1
+		MOVPF		PRODL,WREG
+		ADDWF		AARGB4,F
+		MOVPF		PRODH,WREG
+		ADDWFC		AARGB3,F
+		CLRF		WREG,F
+		ADDWFC		AARGB2,F
+
+		MOVFP		TEMPB1,WREG
+		MULWF		BARGB1
+		MOVPF		PRODL,WREG
+		ADDWF		AARGB3,F
+		MOVPF		PRODH,WREG
+		ADDWFC		AARGB2,F
+
+		MOVFP		AARGB0,WREG
+		MULWF		BARGB2
+		MOVPF		PRODL,WREG
+		ADDWF		AARGB3,F
+		MOVPF		PRODH,WREG
+		ADDWFC		AARGB2,F
+		MOVFP		AARGB0,WREG
+		MULWF		BARGB1
+		CLRF		AARGB1,W
+		ADDWFC		AARGB1,F
+		MOVPF		PRODL,WREG
+		ADDWF		AARGB2,F
+		MOVPF		PRODH,WREG
+		ADDWFC		AARGB1,F
+
+		MOVFP		TEMPB0,WREG
+		MULWF		BARGB3
+		MOVPF		PRODL,WREG
+		ADDWF		AARGB4,F
+		MOVPF		PRODH,WREG
+		ADDWFC		AARGB3,F
+		CLRF		WREG,F
+		ADDWFC		AARGB2,F
+		ADDWFC		AARGB1,F
+
+		MOVFP		TEMPB0,WREG
+		MULWF		BARGB0
+		MOVPF		PRODH,AARGB0
+		MOVPF		PRODL,WREG
+		ADDWF		AARGB1,F
+		CLRF		WREG,F
+		ADDWFC		AARGB0,F
+
+		MOVFP		TBLPTRL,WREG
+		MULWF		BARGB0
+		MOVPF		PRODL,WREG
+		ADDWF		AARGB4,F
+		MOVPF		PRODH,WREG
+		ADDWFC		AARGB3,F
+		CLRF		WREG,F
+		ADDWFC		AARGB2,F
+		ADDWFC		AARGB1,F
+		ADDWFC		AARGB0,F
+
+		MOVFP		TEMPB2,WREG
+		MULWF		BARGB0
+		MOVPF		PRODL,WREG
+		ADDWF		AARGB3,F
+		MOVPF		PRODH,WREG
+		ADDWFC		AARGB2,F
+		CLRF		WREG,F
+		ADDWFC		AARGB1,F
+		ADDWFC		AARGB0,F
+
+		MOVFP		TEMPB1,WREG
+		MULWF		BARGB0
+		MOVPF		PRODL,WREG
+		ADDWF		AARGB2,F
+		MOVPF		PRODH,WREG
+		ADDWFC		AARGB1,F
+		CLRF		WREG,F
+		ADDWFC		AARGB0,F
+
+		BTFSC		AARGB0,MSB
+		GOTO		DEXP32
+		RLCF		AARGB3,F
+		RLCF		AARGB2,F
+		RLCF		AARGB1,F
+		RLCF		AARGB0,F
+		DECF		TEMPB3,F
+
+		BTFSC		AARGB0,MSB
+		GOTO		DEXP32
+		RLCF		AARGB3,F
+		RLCF		AARGB2,F
+		RLCF		AARGB1,F
+		RLCF		AARGB0,F
+		DECF		TEMPB3,F
+
+DEXP32		MOVFP           BEXP,WREG               ; compute AEXP - BEXP
+                SUBWF           EXP,F
+		MOVLW		EXPBIAS+1		; add bias + 1 for scaling of F0
+                BTFSS           _C
+                GOTO            ALTB32
+        
+AGEB32		ADDWF           TEMPB3,W		; if AEXP > BEXP, test for overflow
+                ADDWF           EXP,F
+                BTFSC           _C
+                GOTO            SETFOV32
+                GOTO            DROUND32
+
+ALTB32		ADDWF           TEMPB3,W		; if AEXP < BEXP, test for underflow
+                ADDWF           EXP,F
+                BTFSS           _C
+                GOTO            SETFUN32
+
+DROUND32
+		BTFSC           FPFLAGS,RND		; is rounding enabled?
+                BTFSS           AARGB3,MSB		; is NSB > 0x80?
+                GOTO            DIV32OK
+		BSF		_C			; set carry for rounding
+		MOVLW		0x80
+		CPFSGT		AARGB3			; if NSB = 0x80, select even
+		RRCF		AARGB2,W			; using lsb in carry
+                CLRF            WREG,F
+                ADDWFC          AARGB2,F
+                ADDWFC          AARGB1,F
+                ADDWFC          AARGB0,F
+
+                BTFSS           _C                      ; test if rounding caused carryout
+                GOTO            DIV32OK
+                RRCF            AARGB0,F
+                RRCF            AARGB1,F
+                RRCF            AARGB2,F
+                INFSNZ          EXP,F			; test for overflow
+                GOTO            SETFOV32
+
+DIV32OK         BTFSS           SIGN,MSB
+                BCF             AARGB0,MSB		; clear explicit MSB if positive
+
+                RETLW           0
+
+SETFUN32        BSF             FPFLAGS,FUN             ; set floating point underflag
+                BTFSS           FPFLAGS,SAT             ; test for saturation
+                RETLW           0xFF                    ; return error code in WREG
+
+                MOVLW           0x01                    ; saturate to smallest floating
+                MOVPF           WREG,AEXP               ; point number = 0x 01 00 00 00
+                CLRF            AARGB0,F		; modulo the appropriate sign bit
+                CLRF            AARGB1,F
+                CLRF            AARGB2,F
+                RLCF            SIGN,F
+                RRCF            AARGB0,F
+                RETLW           0xFF                    ; return error code in WREG
+
+SETFDZ32        BSF             FPFLAGS,FDZ             ; set floating point divide by zero
+                RETLW           0xFF                    ; flag and return error code in WREG
+
+;----------------------------------------------------------------------------------------------
+
+;	table for interpolating between consecutive 16 bit approximations
+;	to the reciprocal of BARG, with the top 6 explicit bits of BARG as a pointer
+;	and the remaining 17 explicit bits as the argument to linear interpolation.
+
+;IBTBL64I
+;		DATA	0xFFFF
+;		DATA	0xFC10
+;		DATA	0xF83E
+;		DATA	0xF48A
+;		DATA	0xF0F1
+;		DATA	0xED73
+;		DATA	0xEA0F
+;		DATA	0xE6C3
+;		DATA	0xE38E
+;		DATA	0xE070
+;		DATA	0xDD68
+;		DATA	0xDA74
+;		DATA	0xD794
+;		DATA	0xD4C7
+;		DATA	0xD20D
+;		DATA	0xCF64
+;		DATA	0xCCCD
+;		DATA	0xCA46
+;		DATA	0xC7CE
+;		DATA	0xC566
+;		DATA	0xC30C
+;		DATA	0xC0C1
+;		DATA	0xBE83
+;		DATA	0xBC52
+;		DATA	0xBA2F
+;		DATA	0xB817
+;		DATA	0xB60B
+;		DATA	0xB40B
+;		DATA	0xB216
+;		DATA	0xB02C
+;		DATA	0xAE4C
+;		DATA	0xAC77
+;		DATA	0xAAAB
+;		DATA	0xA8E8
+;		DATA	0xA72F
+;		DATA	0xA57F
+;		DATA	0xA3D7
+;		DATA	0xA238
+;		DATA	0xA0A1
+;		DATA	0x9F11
+;		DATA	0x9D8A
+;		DATA	0x9C0A
+;		DATA	0x9A91
+;		DATA	0x991F
+;		DATA	0x97B4
+;		DATA	0x9650
+;		DATA	0x94F2
+;		DATA	0x939B
+;		DATA	0x9249
+;		DATA	0x90FE
+;		DATA	0x8FB8
+;		DATA	0x8E78
+;		DATA	0x8D3E
+;		DATA	0x8C09
+;		DATA	0x8AD9
+;		DATA	0x89AE
+;		DATA	0x8889
+;		DATA	0x8768
+;		DATA	0x864C
+;		DATA	0x8534
+;		DATA	0x8421
+;		DATA	0x8312
+;		DATA	0x8208
+;		DATA	0x8102
+;		DATA	0x8001
+
+;----------------------------------------------------------------------------------------------
+
+;	generation of F0 by interpolating between consecutive 16 bit approximations
+;	to the reciprocal of BARG, with the top 7 explicit bits of BARG as a pointer
+;	and the remaining 16 explicit bits as the argument to linear interpolation.
+
+;IBTBL128I
+;		DATA	0xFFFF
+;		DATA	0xFE04
+;		DATA	0xFC10
+;		DATA	0xFA23
+;		DATA	0xF83E
+;		DATA	0xF660
+;		DATA	0xF48A
+;		DATA	0xF2BA
+;		DATA	0xF0F1
+;		DATA	0xEF2F
+;		DATA	0xED73
+;		DATA	0xEBBE
+;		DATA	0xEA0F
+;		DATA	0xE866
+;		DATA	0xE6C3
+;		DATA	0xE526
+;		DATA	0xE38E
+;		DATA	0xE1FC
+;		DATA	0xE070
+;		DATA	0xDEE9
+;		DATA	0xDD68
+;		DATA	0xDBEB
+;		DATA	0xDA74
+;		DATA	0xD902
+;		DATA	0xD794
+;		DATA	0xD62C
+;		DATA	0xD4C7
+;		DATA	0xD368
+;		DATA	0xD20D
+;		DATA	0xD0B7
+;		DATA	0xCF64
+;		DATA	0xCE17
+;		DATA	0xCCCD
+;		DATA	0xCB87
+;		DATA	0xCA46
+;		DATA	0xC908
+;		DATA	0xC7CE
+;		DATA	0xC698
+;		DATA	0xC566
+;		DATA	0xC437
+;		DATA	0xC30C
+;		DATA	0xC1E5
+;		DATA	0xC0C1
+;		DATA	0xBFA0
+;		DATA	0xBE83
+;		DATA	0xBD69
+;		DATA	0xBC52
+;		DATA	0xBB3F
+;		DATA	0xBA2F
+;		DATA	0xB921
+;		DATA	0xB817
+;		DATA	0xB710
+;		DATA	0xB60B
+;		DATA	0xB50A
+;		DATA	0xB40B
+;		DATA	0xB30F
+;		DATA	0xB216
+;		DATA	0xB120
+;		DATA	0xB02C
+;		DATA	0xAF3B
+;		DATA	0xAE4C
+;		DATA	0xAD60
+;		DATA	0xAC77
+;		DATA	0xAB8F
+;		DATA	0xAAAB
+;		DATA	0xA9C8
+;		DATA	0xA8E8
+;		DATA	0xA80B
+;		DATA	0xA72F
+;		DATA	0xA656
+;		DATA	0xA57F
+;		DATA	0xA4AA
+;		DATA	0xA3D7
+;		DATA	0xA306
+;		DATA	0xA238
+;		DATA	0xA16B
+;		DATA	0xA0A1
+;		DATA	0x9FD8
+;		DATA	0x9F11
+;		DATA	0x9E4D
+;		DATA	0x9D8A
+;		DATA	0x9CC9
+;		DATA	0x9C0A
+;		DATA	0x9B4C
+;		DATA	0x9A91
+;		DATA	0x99D7
+;		DATA	0x991F
+;		DATA	0x9869
+;		DATA	0x97B4
+;		DATA	0x9701
+;		DATA	0x9650
+;		DATA	0x95A0
+;		DATA	0x94F2
+;		DATA	0x9446
+;		DATA	0x939B
+;		DATA	0x92F1
+;		DATA	0x9249
+;		DATA	0x91A3
+;		DATA	0x90FE
+;		DATA	0x905A
+;		DATA	0x8FB8
+;		DATA	0x8F17
+;		DATA	0x8E78
+;		DATA	0x8DDA
+;		DATA	0x8D3E
+;		DATA	0x8CA3
+;		DATA	0x8C09
+;		DATA	0x8B70
+;		DATA	0x8AD9
+;		DATA	0x8A43
+;		DATA	0x89AE
+;		DATA	0x891B
+;		DATA	0x8889
+;		DATA	0x87F8
+;		DATA	0x8768
+;		DATA	0x86D9
+;		DATA	0x864C
+;		DATA	0x85BF
+;		DATA	0x8534
+;		DATA	0x84AA
+;		DATA	0x8421
+;		DATA	0x8399
+;		DATA	0x8312
+;		DATA	0x828D
+;		DATA	0x8208
+;		DATA	0x8185
+;		DATA	0x8102
+;		DATA	0x8081
+;		DATA	0x8001
+
+;----------------------------------------------------------------------------------------------
+
+;	table for F0 by interpolating between consecutive 16 bit approximations
+;	to the reciprocal of BARG, with the top 8 explicit bits of BARG as a pointer
+;	and the remaining 7 explicit bits as the argument to linear interpolation.
+
+IBTBL256I
+		DATA	0xFFFF
+		DATA	0xFF01
+		DATA	0xFE04
+		DATA	0xFD09
+		DATA	0xFC10
+		DATA	0xFB19
+		DATA	0xFA23
+		DATA	0xF930
+		DATA	0xF83E
+		DATA	0xF74E
+		DATA	0xF660
+		DATA	0xF574
+		DATA	0xF48A
+		DATA	0xF3A1
+		DATA	0xF2BA
+		DATA	0xF1D5
+		DATA	0xF0F1
+		DATA	0xF00F
+		DATA	0xEF2F
+		DATA	0xEE50
+		DATA	0xED73
+		DATA	0xEC98
+		DATA	0xEBBE
+		DATA	0xEAE5
+		DATA	0xEA0F
+		DATA	0xE939
+		DATA	0xE866
+		DATA	0xE793
+		DATA	0xE6C3
+		DATA	0xE5F3
+		DATA	0xE526
+		DATA	0xE459
+		DATA	0xE38E
+		DATA	0xE2C5
+		DATA	0xE1FC
+		DATA	0xE136
+		DATA	0xE070
+		DATA	0xDFAC
+		DATA	0xDEE9
+		DATA	0xDE28
+		DATA	0xDD68
+		DATA	0xDCA9
+		DATA	0xDBEB
+		DATA	0xDB2F
+		DATA	0xDA74
+		DATA	0xD9BA
+		DATA	0xD902
+		DATA	0xD84A
+		DATA	0xD794
+		DATA	0xD6DF
+		DATA	0xD62C
+		DATA	0xD579
+		DATA	0xD4C7
+		DATA	0xD417
+		DATA	0xD368
+		DATA	0xD2BA
+		DATA	0xD20D
+		DATA	0xD161
+		DATA	0xD0B7
+		DATA	0xD00D
+		DATA	0xCF64
+		DATA	0xCEBD
+		DATA	0xCE17
+		DATA	0xCD71
+		DATA	0xCCCD
+		DATA	0xCC29
+		DATA	0xCB87
+		DATA	0xCAE6
+		DATA	0xCA46
+		DATA	0xC9A6
+		DATA	0xC908
+		DATA	0xC86A
+		DATA	0xC7CE
+		DATA	0xC733
+		DATA	0xC698
+		DATA	0xC5FE
+		DATA	0xC566
+		DATA	0xC4CE
+		DATA	0xC437
+		DATA	0xC3A1
+		DATA	0xC30C
+		DATA	0xC278
+		DATA	0xC1E5
+		DATA	0xC152
+		DATA	0xC0C1
+		DATA	0xC030
+		DATA	0xBFA0
+		DATA	0xBF11
+		DATA	0xBE83
+		DATA	0xBDF6
+		DATA	0xBD69
+		DATA	0xBCDD
+		DATA	0xBC52
+		DATA	0xBBC8
+		DATA	0xBB3F
+		DATA	0xBAB6
+		DATA	0xBA2F
+		DATA	0xB9A8
+		DATA	0xB921
+		DATA	0xB89C
+		DATA	0xB817
+		DATA	0xB793
+		DATA	0xB710
+		DATA	0xB68D
+		DATA	0xB60B
+		DATA	0xB58A
+		DATA	0xB50A
+		DATA	0xB48A
+		DATA	0xB40B
+		DATA	0xB38D
+		DATA	0xB30F
+		DATA	0xB292
+		DATA	0xB216
+		DATA	0xB19B
+		DATA	0xB120
+		DATA	0xB0A6
+		DATA	0xB02C
+		DATA	0xAFB3
+		DATA	0xAF3B
+		DATA	0xAEC3
+		DATA	0xAE4C
+		DATA	0xADD6
+		DATA	0xAD60
+		DATA	0xACEB
+		DATA	0xAC77
+		DATA	0xAC03
+		DATA	0xAB8F
+		DATA	0xAB1D
+		DATA	0xAAAB
+		DATA	0xAA39
+		DATA	0xA9C8
+		DATA	0xA958
+		DATA	0xA8E8
+		DATA	0xA879
+		DATA	0xA80B
+		DATA	0xA79C
+		DATA	0xA72F
+		DATA	0xA6C2
+		DATA	0xA656
+		DATA	0xA5EA
+		DATA	0xA57F
+		DATA	0xA514
+		DATA	0xA4AA
+		DATA	0xA440
+		DATA	0xA3D7
+		DATA	0xA36E
+		DATA	0xA306
+		DATA	0xA29F
+		DATA	0xA238
+		DATA	0xA1D1
+		DATA	0xA16B
+		DATA	0xA106
+		DATA	0xA0A1
+		DATA	0xA03C
+		DATA	0x9FD8
+		DATA	0x9F74
+		DATA	0x9F11
+		DATA	0x9EAF
+		DATA	0x9E4D
+		DATA	0x9DEB
+		DATA	0x9D8A
+		DATA	0x9D29
+		DATA	0x9CC9
+		DATA	0x9C69
+		DATA	0x9C0A
+		DATA	0x9BAB
+		DATA	0x9B4C
+		DATA	0x9AEE
+		DATA	0x9A91
+		DATA	0x9A34
+		DATA	0x99D7
+		DATA	0x997B
+		DATA	0x991F
+		DATA	0x98C4
+		DATA	0x9869
+		DATA	0x980E
+		DATA	0x97B4
+		DATA	0x975A
+		DATA	0x9701
+		DATA	0x96A8
+		DATA	0x9650
+		DATA	0x95F8
+		DATA	0x95A0
+		DATA	0x9549
+		DATA	0x94F2
+		DATA	0x949C
+		DATA	0x9446
+		DATA	0x93F0
+		DATA	0x939B
+		DATA	0x9346
+		DATA	0x92F1
+		DATA	0x929D
+		DATA	0x9249
+		DATA	0x91F6
+		DATA	0x91A3
+		DATA	0x9150
+		DATA	0x90FE
+		DATA	0x90AC
+		DATA	0x905A
+		DATA	0x9009
+		DATA	0x8FB8
+		DATA	0x8F68
+		DATA	0x8F17
+		DATA	0x8EC8
+		DATA	0x8E78
+		DATA	0x8E29
+		DATA	0x8DDA
+		DATA	0x8D8C
+		DATA	0x8D3E
+		DATA	0x8CF0
+		DATA	0x8CA3
+		DATA	0x8C56
+		DATA	0x8C09
+		DATA	0x8BBC
+		DATA	0x8B70
+		DATA	0x8B24
+		DATA	0x8AD9
+		DATA	0x8A8E
+		DATA	0x8A43
+		DATA	0x89F8
+		DATA	0x89AE
+		DATA	0x8964
+		DATA	0x891B
+		DATA	0x88D2
+		DATA	0x8889
+		DATA	0x8840
+		DATA	0x87F8
+		DATA	0x87AF
+		DATA	0x8768
+		DATA	0x8720
+		DATA	0x86D9
+		DATA	0x8692
+		DATA	0x864C
+		DATA	0x8605
+		DATA	0x85BF
+		DATA	0x8579
+		DATA	0x8534
+		DATA	0x84EF
+		DATA	0x84AA
+		DATA	0x8465
+		DATA	0x8421
+		DATA	0x83DD
+		DATA	0x8399
+		DATA	0x8356
+		DATA	0x8312
+		DATA	0x82CF
+		DATA	0x828D
+		DATA	0x824A
+		DATA	0x8208
+		DATA	0x81C6
+		DATA	0x8185
+		DATA	0x8143
+		DATA	0x8102
+		DATA	0x80C1
+		DATA	0x8081
+		DATA	0x8040
+		DATA	0x8001
+
+;**********************************************************************************************
+;**********************************************************************************************
+
+;       Floating Point Subtract
+
+;       Input:  32 bit floating point number in AEXP, AARGB0, AARGB1, AARGB2
+;               32 bit floating point number in BEXP, BARGB0, BARGB1, BARGB2
+
+;       Use:    CALL FPS32
+
+;       Output: 32 bit floating point difference in AEXP, AARGB0, AARGB1, AARGB2
+
+;       Result: AARG  <--  AARG - BARG
+
+;       Max Timing:     1+160 = 161 clks                RND = 0
+;                       1+176 = 177 clks                RND = 1, SAT = 0
+;			1+182 = 183 clks		RND = 1, SAT = 1
+
+;       Min Timing:     1+20 = 21 clks
+
+;       PM: 425                                 DM: 14
+
+;----------------------------------------------------------------------------------------------
+
+FPS32           BTG             BARGB0,MSB             ; toggle sign bit for subtraction
+
+;**********************************************************************************************
+
+;       Floating Point Add
+
+;       Input:  32 bit floating point number in AEXP, AARGB0, AARGB1, AARGB2
+;               32 bit floating point number in BEXP, BARGB0, BARGB1, BARGB2
+
+;       Use:    CALL FPA32
+
+;       Output: 32 bit floating point sum in AEXP, AARGB0, AARGB1, AARGB2
+
+;       Result: AARG  <--  AARG - BARG
+
+;       Max Timing:     7+70+22+61 = 160 clks           RND = 0
+;                       7+70+22+77 = 176 clks           RND = 1, SAT = 0
+;                       7+70+22+83 = 182 clks           RND = 1, SAT = 1
+
+;       Min Timing:     6+14 = 20 clks
+
+;       PM: 424                                 DM: 14
+
+;----------------------------------------------------------------------------------------------
+
+FPA32           MOVFP           AARGB0,WREG             ; exclusive or of signs in TEMPB0
+                XORWF           BARGB0,W
+                MOVPF           WREG,TEMPB0
+
+		CLRF		AARGB3,F
+
+                MOVFP           AEXP,WREG               ; use AARG if AEXP >= BEXP
+                CPFSGT          BEXP
+                GOTO            USEA32
+
+USEB32		MOVFP           BARGB0,WREG             ; use BARG if AEXP < BEXP
+                MOVPF           WREG,SIGN               ; save sign in SIGN
+                BSF             BARGB0,MSB              ; make MSB's explicit
+                BSF             AARGB0,MSB
+
+                MOVFP           AEXP,WREG               ; compute shift count in BEXP
+		MOVPF		WREG,TEMPB1
+                MOVFP           BEXP,WREG
+		MOVPF		WREG,AEXP
+
+		CLRF		WREG,F
+		CPFSGT		TEMPB1			; return BARG if AARG = 0
+		GOTO            BRETURN32
+		MOVFP		TEMPB1,WREG
+                SUBWF           BEXP,F
+                BTFSC           _Z
+                GOTO            BLIGNED32
+
+                MOVLW           7
+                CPFSGT          BEXP                    ; do byte shift if BEXP >= 8 
+                GOTO            BNIB32
+
+                SUBWF           BEXP,F			; BEXP = BEXP - 7
+                MOVFP           AARGB2,AARGB3		; keep for postnormalization
+                MOVFP           AARGB1,AARGB2
+                MOVFP           AARGB0,AARGB1
+                CLRF            AARGB0,F
+                DCFSNZ          BEXP,F			; BEXP = BEXP - 1
+                GOTO            BLIGNED32
+
+                CPFSGT          BEXP                    ; do another byte shift if BEXP >= 8 
+                GOTO            BNIB32A
+                SUBWF           BEXP,F			; BEXP = BEXP - 7
+                MOVFP           AARGB2,AARGB3		; keep for postnormalization
+                MOVFP           AARGB1,AARGB2
+                CLRF            AARGB1,F
+                DCFSNZ          BEXP,F			; BEXP = BEXP - 1
+                GOTO            BLIGNED32
+
+                CPFSGT          BEXP                    ; do another byte shift if BEXP >= 8 
+                GOTO            BNIB32B
+                SUBWF           BEXP,F			; BEXP = BEXP - 7
+                MOVFP           AARGB2,AARGB3		; keep for postnormalization
+                CLRF            AARGB2,F
+                DCFSNZ          BEXP,F			; BEXP = BEXP - 1
+                GOTO            BLIGNED32
+
+                CPFSGT          BEXP                    ; if BEXP still >= 8, then
+                GOTO            BNIB32C                 ; AARG = 0 relative to BARG
+
+BRETURN32	MOVFP           SIGN,AARGB0             ; return BARG
+                MOVFP           BARGB1,AARGB1
+                MOVFP           BARGB2,AARGB2
+		CLRF		AARGB3,F
+                RETLW           0x00
+
+BNIB32C         MOVLW           3                       ; do nibbleshift if BEXP >= 4
+                CPFSGT          BEXP
+                GOTO            BLOOP32C
+                SUBWF           BEXP,F			; BEXP = BEXP -3
+		SWAPF		AARGB3,W
+		ANDLW		0x0F
+		MOVPF		WREG,AARGB3
+                DCFSNZ          BEXP,F			; BEXP = BEXP - 1
+                GOTO            BLIGNED32		; aligned if BEXP = 0
+
+BLOOP32C        BCF             _C                      ; right shift by BEXP
+		RRCF		AARGB3,F
+                DCFSNZ          BEXP,F
+                GOTO            BLIGNED32               ; aligned if BEXP = 0
+                BCF             _C
+		RRCF		AARGB3,F
+                DCFSNZ          BEXP,F
+                GOTO            BLIGNED32               ; aligned if BEXP = 0
+                BCF             _C                      ; at most 3 right shifts are
+                RRCF            AARGB3,F                ; possible
+                GOTO            BLIGNED32
+
+BNIB32B         MOVLW           3                       ; do nibbleshift if BEXP >= 4
+                CPFSGT          BEXP
+                GOTO            BLOOP32B
+                SUBWF           BEXP,F			; BEXP = BEXP -3
+		SWAPF		AARGB3,W
+		ANDLW		0x0F
+		MOVPF		WREG,AARGB3
+                SWAPF           AARGB2,W
+                ANDLW           0xF0
+		ADDWF		AARGB3,F
+		SWAPF		AARGB2,W
+		ANDLW		0x0F
+                MOVPF           WREG,AARGB2
+                DCFSNZ          BEXP,F			; BEXP = BEXP - 1
+                GOTO            BLIGNED32		; aligned if BEXP = 0
+
+BLOOP32B        BCF             _C                      ; right shift by BEXP
+                RRCF            AARGB2,F
+		RRCF		AARGB3,F
+                DCFSNZ          BEXP,F
+                GOTO            BLIGNED32               ; aligned if BEXP = 0
+                BCF             _C
+                RRCF            AARGB2,F
+		RRCF		AARGB3,F
+                DCFSNZ          BEXP,F
+                GOTO            BLIGNED32               ; aligned if BEXP = 0
+                BCF             _C                      ; at most 3 right shifts are
+                RRCF            AARGB2,F                ; possible
+		RRCF		AARGB3,F
+                GOTO            BLIGNED32
+
+BNIB32A         MOVLW           3                       ; do nibbleshift if BEXP >= 4
+                CPFSGT          BEXP
+                GOTO            BLOOP32A
+                SUBWF           BEXP,F			; BEXP = BEXP -3
+		SWAPF		AARGB3,W
+		ANDLW		0x0F
+		MOVPF		WREG,AARGB3
+                SWAPF           AARGB2,W
+                ANDLW           0xF0
+		ADDWF		AARGB3,F
+		SWAPF		AARGB2,W
+		ANDLW		0x0F
+                MOVPF           WREG,AARGB2
+                SWAPF           AARGB1,W
+                ANDLW           0xF0
+                ADDWF           AARGB2,F
+                SWAPF           AARGB1,W
+                ANDLW           0x0F
+                MOVPF           WREG,AARGB1
+                DCFSNZ          BEXP,F			; BEXP = BEXP - 1
+                GOTO            BLIGNED32               ; aligned if BEXP = 0
+
+BLOOP32A        BCF             _C                      ; right shift by BEXP
+                RRCF            AARGB1,F
+                RRCF            AARGB2,F
+		RRCF		AARGB3,F
+                DCFSNZ          BEXP,F
+                GOTO            BLIGNED32               ; aligned if BEXP = 0
+                BCF             _C
+                RRCF            AARGB1,F
+                RRCF            AARGB2,F
+		RRCF		AARGB3,F
+                DCFSNZ          BEXP,F
+                GOTO            BLIGNED32		; aligned if BEXP = 0
+                BCF             _C                      ; at most 3 right shifts are
+                RRCF            AARGB1,F		; possible
+                RRCF            AARGB2,F
+		RRCF		AARGB3,F
+                GOTO            BLIGNED32
+
+BNIB32          MOVLW           3                       ; do nibbleshift if BEXP >= 4
+                CPFSGT          BEXP
+                GOTO            BLOOP32
+                SUBWF           BEXP,F			; BEXP = BEXP -3
+		SWAPF		AARGB3,W
+		ANDLW		0x0F
+		MOVPF		WREG,AARGB3
+                SWAPF           AARGB2,W
+                ANDLW           0xF0
+		ADDWF		AARGB3,F
+		SWAPF		AARGB2,W
+		ANDLW		0x0F
+                MOVPF           WREG,AARGB2
+                SWAPF           AARGB1,W
+                ANDLW           0xF0
+                ADDWF           AARGB2,F
+                SWAPF           AARGB1,W
+                ANDLW           0x0F
+                MOVPF           WREG,AARGB1
+		SWAPF		AARGB0,W
+		ANDLW		0xF0
+		ADDWF		AARGB1,F
+		SWAPF		AARGB0,W
+		ANDLW		0x0F
+		MOVPF		WREG,AARGB0
+                DCFSNZ          BEXP,F			; BEXP = BEXP - 1
+                GOTO            BLIGNED32               ; aligned if BEXP = 0
+
+BLOOP32         BCF             _C                      ; right shift by BEXP
+                RRCF            AARGB0,F
+                RRCF            AARGB1,F
+                RRCF            AARGB2,F
+		RRCF		AARGB3,F
+                DCFSNZ          BEXP,F
+                GOTO            BLIGNED32               ; aligned if BEXP = 0
+                BCF             _C
+                RRCF            AARGB0,F
+                RRCF            AARGB1,F
+                RRCF            AARGB2,F
+		RRCF		AARGB3,F
+                DCFSNZ          BEXP,F
+                GOTO            BLIGNED32               ; aligned if BEXP = 0
+                BCF             _C                      ; at most 3 right shifts are
+                RRCF            AARGB0,F                ; possible
+                RRCF            AARGB1,F
+                RRCF            AARGB2,F
+		RRCF		AARGB3,F
+
+BLIGNED32	CLRF		BARGB3,W
+	        BTFSS           TEMPB0,MSB              ; negate if signs opposite
+                GOTO            AOK32
+		COMF		AARGB3,F
+                COMF            AARGB2,F
+                COMF            AARGB1,F
+                COMF            AARGB0,F
+                INCF            AARGB3,F
+                ADDWFC          AARGB2,F
+                ADDWFC          AARGB1,F
+                ADDWFC          AARGB0,F
+                GOTO            AOK32
+
+USEA32		TSTFSZ		BEXP                    ; return AARG if BARG = 0
+		GOTO		BNE032
+		RETLW		0x00
+
+BNE032		CLRF		BARGB3,F
+                MOVPF           AARGB0,SIGN             ; save sign in SIGN
+                BSF             AARGB0,MSB              ; make MSB's explicit
+                BSF             BARGB0,MSB
+
+                MOVFP           BEXP,WREG               ; compute shift count in BEXP
+                SUBWF           AEXP,W
+                MOVPF           WREG,BEXP
+                BTFSC           _Z
+                GOTO            ALIGNED32
+
+                MOVLW           7
+                CPFSGT          BEXP                    ; do byte shift if BEXP >= 8 
+                GOTO            ANIB32
+                SUBWF           BEXP,F			; BEXP = BEXP - 7
+                MOVFP           BARGB2,WREG		; keep for postnormalization
+                MOVPF           WREG,BARGB3
+                MOVFP           BARGB1,WREG
+                MOVPF           WREG,BARGB2
+                MOVFP           BARGB0,WREG
+                MOVPF           WREG,BARGB1
+                CLRF            BARGB0,F
+                DCFSNZ          BEXP,F			; BEXP = BEXP - 1
+                GOTO            ALIGNED32
+
+                MOVLW           7
+                CPFSGT          BEXP                    ; do another byte shift if BEXP >= 8 
+                GOTO            ANIB32A
+                SUBWF           BEXP,F			; BEXP = BEXP - 7
+                MOVFP           BARGB2,WREG
+                MOVPF           WREG,BARGB3
+                MOVFP           BARGB1,WREG
+                MOVPF           WREG,BARGB2
+                CLRF            BARGB1,F
+                DCFSNZ          BEXP,F			; BEXP = BEXP - 1
+                GOTO            ALIGNED32
+
+                MOVLW           7
+                CPFSGT          BEXP                    ; do another byte shift if BEXP >= 8 
+                GOTO            ANIB32B
+                SUBWF           BEXP,F			; BEXP = BEXP - 7
+                MOVFP           BARGB2,WREG
+                MOVPF           WREG,BARGB3
+                CLRF            BARGB2,F
+                DCFSNZ          BEXP,F			; BEXP = BEXP - 1
+                GOTO            ALIGNED32
+
+                MOVLW           7
+                CPFSGT          BEXP                    ; if BEXP still >= 8, then
+                GOTO            ANIB32C                 ; BARG = 0 relative to AARG
+
+                MOVFP           SIGN,AARGB0             ; return AARG
+                RETLW           0x00
+
+ANIB32C         MOVLW           3                       ; do nibbleshift if BEXP >= 4
+                CPFSGT          BEXP
+                GOTO            ALOOP32C
+                SUBWF           BEXP,F			; BEXP = BEXP -3
+		SWAPF		BARGB3,W
+		ANDLW		0x0F
+		MOVPF		WREG,BARGB3
+                DCFSNZ          BEXP,F			; BEXP = BEXP - 1
+                GOTO            ALIGNED32               ; aligned if BEXP = 0
+
+ALOOP32C        BCF             _C                      ; right shift by BEXP
+		RRCF		BARGB3,F
+                DCFSNZ          BEXP,F
+                GOTO            ALIGNED32               ; aligned if BEXP = 0
+                BCF             _C
+		RRCF		BARGB3,F
+                DCFSNZ          BEXP,F
+                GOTO            ALIGNED32               ; aligned if BEXP = 0
+                BCF             _C                      ; at most 3 right shifts are
+                RRCF            BARGB3,F                ; possible
+                GOTO            ALIGNED32
+
+ANIB32B         MOVLW           3                       ; do nibbleshift if BEXP >= 4
+                CPFSGT          BEXP
+                GOTO            ALOOP32B
+                SUBWF           BEXP,F			; BEXP = BEXP -3
+		SWAPF		BARGB3,W
+		ANDLW		0x0F
+		MOVPF		WREG,BARGB3
+                SWAPF           BARGB2,W
+                ANDLW           0xF0
+		ADDWF		BARGB3,F
+		SWAPF		BARGB2,W
+		ANDLW		0x0F
+                MOVPF           WREG,BARGB2
+                DCFSNZ          BEXP,F			; BEXP = BEXP - 1
+                GOTO            ALIGNED32               ; aligned if BEXP = 0
+
+ALOOP32B        BCF             _C                      ; right shift by BEXP
+                RRCF            BARGB2,F
+		RRCF		BARGB3,F
+                DCFSNZ          BEXP,F
+                GOTO            ALIGNED32               ; aligned if BEXP = 0
+                BCF             _C
+                RRCF            BARGB2,F
+		RRCF		BARGB3,F
+                DCFSNZ          BEXP,F
+                GOTO            ALIGNED32               ; aligned if BEXP = 0
+                BCF             _C                      ; at most 3 right shifts are
+                RRCF            BARGB2,F                ; possible
+		RRCF		BARGB3,F
+                GOTO            ALIGNED32
+
+ANIB32A         MOVLW           3                       ; do nibbleshift if BEXP >= 4
+                CPFSGT          BEXP
+                GOTO            ALOOP32A
+                SUBWF           BEXP,F			; BEXP = BEXP -3
+		SWAPF		BARGB3,W
+		ANDLW		0x0F
+		MOVPF		WREG,BARGB3
+                SWAPF           BARGB2,W
+                ANDLW           0xF0
+		ADDWF		BARGB3,F
+		SWAPF		BARGB2,W
+		ANDLW		0x0F
+                MOVPF           WREG,BARGB2
+                SWAPF           BARGB1,W
+                ANDLW           0xF0
+                ADDWF           BARGB2,F
+                SWAPF           BARGB1,W
+                ANDLW           0x0F
+                MOVPF           WREG,BARGB1
+                DCFSNZ          BEXP,F			; BEXP = BEXP - 1
+                GOTO            ALIGNED32               ; aligned if BEXP = 0
+
+ALOOP32A        BCF             _C                      ; right shift by BEXP
+                RRCF            BARGB1,F
+                RRCF            BARGB2,F
+		RRCF		BARGB3,F
+                DCFSNZ          BEXP,F
+                GOTO            ALIGNED32               ; aligned if BEXP = 0
+                BCF             _C
+                RRCF            BARGB1,F
+                RRCF            BARGB2,F
+		RRCF		BARGB3,F
+                DCFSNZ          BEXP,F
+                GOTO            ALIGNED32               ; aligned if BEXP = 0
+                BCF             _C                      ; at most 3 right shifts are
+                RRCF            BARGB1,F                ; possible
+                RRCF            BARGB2,F
+		RRCF		BARGB3,F
+                GOTO            ALIGNED32
+
+ANIB32          MOVLW           3                       ; do nibbleshift if BEXP >= 4
+                CPFSGT          BEXP
+                GOTO            ALOOP32
+                SUBWF           BEXP,F			; BEXP = BEXP -3
+		SWAPF		BARGB3,W
+		ANDLW		0x0F
+		MOVPF		WREG,BARGB3
+                SWAPF           BARGB2,W
+                ANDLW           0xF0
+		ADDWF		BARGB3,F
+		SWAPF		BARGB2,W
+		ANDLW		0x0F
+                MOVPF           WREG,BARGB2
+                SWAPF           BARGB1,W
+                ANDLW           0xF0
+                ADDWF           BARGB2,F
+                SWAPF           BARGB1,W
+                ANDLW           0x0F
+                MOVPF           WREG,BARGB1
+                SWAPF           BARGB0,W
+                ANDLW           0xF0
+                ADDWF           BARGB1,F
+		SWAPF		BARGB0,W
+		ANDLW		0x0F
+		MOVPF		WREG,BARGB0
+                DCFSNZ          BEXP,F			; BEXP = BEXP - 1
+                GOTO            ALIGNED32               ; aligned if BEXP = 0
+
+ALOOP32         BCF             _C                      ; right shift by BEXP
+                RRCF            BARGB0,F
+                RRCF            BARGB1,F
+                RRCF            BARGB2,F
+		RRCF		BARGB3,F
+                DCFSNZ          BEXP,F
+                GOTO            ALIGNED32                ; aligned if BEXP = 0
+                BCF             _C
+                RRCF            BARGB0,F
+                RRCF            BARGB1,F
+                RRCF            BARGB2,F
+		RRCF		BARGB3,F
+                DCFSNZ          BEXP,F
+                GOTO            ALIGNED32		; aligned if BEXP = 0
+                BCF             _C                      ; at most 3 right shifts are
+                RRCF            BARGB0,F		; possible
+                RRCF            BARGB1,F
+                RRCF            BARGB2,F
+		RRCF		BARGB3,F
+
+ALIGNED32	CLRF		AARGB3,W
+	        BTFSS           TEMPB0,MSB              ; negate if signs opposite
+                GOTO            AOK32
+                COMF		BARGB3,F
+                COMF            BARGB2,F
+                COMF            BARGB1,F
+                COMF            BARGB0,F
+                INCF            BARGB3,F
+                ADDWFC          BARGB2,F
+                ADDWFC          BARGB1,F
+                ADDWFC          BARGB0,F
+
+AOK32		MOVFP		BARGB3,WREG
+		ADDWF		AARGB3,F
+		MOVFP           BARGB2,WREG             ; add
+                ADDWFC          AARGB2,F
+                MOVFP           BARGB1,WREG
+                ADDWFC          AARGB1,F
+                MOVFP           BARGB0,WREG
+                ADDWFC          AARGB0,F
+
+                BTFSC           TEMPB0,MSB
+                GOTO            ACOMP32
+                BTFSS           _C
+                GOTO            NRMRND4032
+
+                RRCF            AARGB0,F                ; shift right and increment EXP
+                RRCF            AARGB1,F
+                RRCF            AARGB2,F
+		RRCF		AARGB3,F
+                INCFSZ          AEXP,F
+                GOTO            NRMRND4032
+                GOTO            SETFOV32                ; set floating point overflow flag
+
+ACOMP32         BTFSC           _C
+                GOTO            NRM4032                 ; normalize and fix sign
+		CLRF		WREG,F
+                COMF		AARGB3,F                ; negate, toggle sign bit and
+                COMF            AARGB2,F                ; then normalize
+                COMF            AARGB1,F
+                COMF            AARGB0,F
+                INCF            AARGB3,F
+                ADDWFC          AARGB2,F
+                ADDWFC          AARGB1,F
+                ADDWFC          AARGB0,F
+                BTG             SIGN,MSB
+                GOTO            NRM4032
+
